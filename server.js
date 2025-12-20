@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.5 - Deep Fee Fix & Performance - ${new Date().toISOString()}
+        v4.5.1 - Diagnostic Logs - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -263,6 +263,7 @@ app.get('/listings', async (req, res) => {
                 feeData.set(itemId, GLOBAL_FEE_CACHE.get(cacheKey));
             } else {
                 try {
+                    console.log(`[Fee Debug] Req ${itemId}: P=${item.price}, C=${item.category_id}, T=${normalizedType}`);
                     const fRes = await axios.get(`https://api.mercadolibre.com/sites/MLA/listing_prices`, {
                         headers: { Authorization: `Bearer ${accessToken}` },
                         params: {
@@ -272,6 +273,7 @@ app.get('/listings', async (req, res) => {
                             quantity: 1
                         }
                     });
+                    console.log(`[Fee Debug] Res ${itemId}: ${JSON.stringify(fRes.data)}`);
 
                     const fees = Array.isArray(fRes.data) ? fRes.data : [fRes.data];
                     const feeInfo = fees[0];
