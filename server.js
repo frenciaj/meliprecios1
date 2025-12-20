@@ -53,7 +53,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.2 - Net Income Column - ${new Date().toISOString()}
+        v4.2.1 - Net Income Fix - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -223,6 +223,7 @@ app.get('/listings', async (req, res) => {
         // Fetch buy box winner status and sale fees
         const buyBoxData = new Map();
         const feeData = new Map();
+        const feeCache = new Map(); // Cache fees by price+type+category
 
         // Process items to get buy box status and fees
         for (const itemWrapper of allItems) {
@@ -251,34 +252,45 @@ app.get('/listings', async (req, res) => {
                     }
                 }
 
-                // 2. Fetch Listing Fees (for all items)
-                try {
-                    const feeResponse = await axios.get(
-                        `https://api.mercadolibre.com/sites/MLA/listing_prices`,
-                        {
-                            headers: { Authorization: `Bearer ${accessToken}` },
-                            params: {
-                                price: item.price,
-                                listing_type_id: item.listing_type_id,
-                                category_id: item.category_id,
-                                currency_id: item.currency_id,
-                                quantity: 1
+                // 2. Fetch Listing Fees (with caching)
+                const cacheKey = `${item.price}-${item.listing_type_id}-${item.category_id}`;
+                if (feeCache.has(cacheKey)) {
+                    feeData.set(itemId, feeCache.get(cacheKey));
+                } else {
+                    try {
+                        const feeResponse = await axios.get(
+                            `https://api.mercadolibre.com/sites/MLA/listing_prices`,
+                            {
+                                headers: { Authorization: `Bearer ${accessToken}` },
+                                params: {
+                                    price: item.price,
+                                    category_id: item.category_id,
+                                    quantity: 1
+                                }
+                            }
+                        );
+
+                        if (feeResponse.data && feeResponse.data.length > 0) {
+                            const fees = Array.isArray(feeResponse.data) ? feeResponse.data : [feeResponse.data];
+                            // Match listing type, handling common aliases (gold_special -> classic, gold_pro -> premium)
+                            const feeInfo = fees.find(f =>
+                                f.listing_type_id === item.listing_type_id ||
+                                (item.listing_type_id === 'gold_special' && f.listing_type_id === 'classic') ||
+                                (item.listing_type_id === 'gold_pro' && f.listing_type_id === 'premium')
+                            );
+
+                            if (feeInfo) {
+                                feeData.set(itemId, feeInfo.sale_fee_amount);
+                                feeCache.set(cacheKey, feeInfo.sale_fee_amount);
                             }
                         }
-                    );
-
-                    if (feeResponse.data && feeResponse.data.length > 0) {
-                        // The API returns an array of listing types, match with item.listing_type_id
-                        const feeInfo = feeResponse.data.find(f => f.listing_type_id === item.listing_type_id);
-                        if (feeInfo) {
-                            feeData.set(itemId, feeInfo.sale_fee_amount);
-                        }
+                    } catch (error) {
+                        console.error(`Error fetching fees for ${itemId}:`, error.message);
                     }
-                } catch (error) {
-                    console.error(`Error fetching fees for ${itemId}:`, error.message);
                 }
             }
         }
+
 
         const tableRows = allItems.map(itemWrapper => {
             if (itemWrapper.code !== 200) return '';
