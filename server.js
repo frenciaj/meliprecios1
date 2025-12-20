@@ -11,6 +11,17 @@ const PORT = process.env.PORT || 3000;
 // Trust proxy for Vercel
 app.set('trust proxy', 1);
 
+app.get('/debug-config', (req, res) => {
+    res.send(`
+        <h1>Configuration Debug</h1>
+        <p><strong>Redirect URI (Server sees):</strong> ${process.env.REDIRECT_URI}</p>
+        <p><strong>Client ID (Server sees):</strong> ${process.env.CLIENT_ID}</p>
+        <p><em>Check if these match EXACTLY what is in your Mercado Libre App Settings.</em></p>
+        <hr>
+        <p>Timestamp: ${new Date().toISOString()}</p>
+    `);
+});
+
 // Middleware
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(cookieParser());
