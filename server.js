@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v5.3 - Auth Optimization - ${new Date().toISOString()}
+        v6.0 - Unified Pricing Reference API - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -259,104 +259,30 @@ app.get('/listings', async (req, res) => {
                 }
             }
 
-            // 2. Fetch Fees (with Global Caching)
-            const normalizedType = LISTING_TYPE_ALIASES[item.listing_type_id] || item.listing_type_id;
-            const cacheKey = `${item.price}-${normalizedType}-${item.category_id}`;
-
-            if (GLOBAL_FEE_CACHE.has(cacheKey)) {
-                feeData.set(itemId, GLOBAL_FEE_CACHE.get(cacheKey));
-            } else {
-                try {
-                    const fRes = await axios.get(`https://api.mercadolibre.com/sites/MLA/listing_prices`, {
-                        headers: { Authorization: `Bearer ${accessToken}` },
-                        params: {
-                            price: item.price,
-                            category_id: item.category_id,
-                            quantity: 1
-                        }
-                    });
-
-                    const fees = Array.isArray(fRes.data) ? fRes.data : [fRes.data];
-                    let feeInfo = fees.find(f =>
-                        f.listing_type_id === item.listing_type_id ||
-                        LISTING_TYPE_ALIASES[item.listing_type_id] === f.listing_type_id
-                    ) || fees[0];
-
-                    const sFee = item.price * 0.15; // Hardcoded at 15% per user request
-                    let finFee = 0;
-
-                    if (feeInfo && feeInfo.sale_fee_details) {
-                        feeInfo.sale_fee_details.forEach(d => {
-                            if (d.financing_add_on_fee) {
-                                finFee += d.financing_add_on_fee;
-                            }
-                        });
-                    }
-
-                    // Fallback for financing if it seems missing for Premium items
-                    const isPremium = (item.listing_type_id === 'gold_pro' || item.listing_type_id === 'premium');
-                    if (isPremium && finFee === 0) {
-                        finFee = item.price * 0.04; // Typical financing cost for Premium
-                    }
-
-                    const result = { saleFee: sFee, financingFee: finFee, isEstimate: false };
-                    feeData.set(itemId, result);
-                    GLOBAL_FEE_CACHE.set(cacheKey, result);
-                } catch (err) {
-                    console.error(`Fee Error (${itemId}):`, err.message);
-                    feeData.set(itemId, { saleFee: item.price * 0.15, financingFee: 0, isEstimate: true });
-                }
-            }
-
-            // 3. Fetch Shipping Cost (Improved for Sellers)
-            if (item.shipping && item.shipping.free_shipping) {
-                if (GLOBAL_SHIPPING_CACHE.has(itemId)) {
-                    shippingData.set(itemId, GLOBAL_SHIPPING_CACHE.get(itemId));
-                } else {
-                    try {
-                        const sRes = await axios.get(`https://api.mercadolibre.com/items/${itemId}/shipping_options?zip_code=1001`, {
-                            headers: { Authorization: `Bearer ${accessToken}` }
-                        });
-
-                        let cost = 0;
-                        if (sRes.data && sRes.data.options) {
-                            const freeOption = sRes.data.options.find(o => o.display === 'always_free' || o.cost === 0) || sRes.data.options[0];
-                            cost = freeOption.list_cost || freeOption.cost || 0;
-                        }
-
-                        if (cost === 0) {
-                            const fallbackRes = await axios.get(`https://api.mercadolibre.com/items/${itemId}/shipping_options/cost`, {
-                                headers: { Authorization: `Bearer ${accessToken}` }
-                            });
-                            cost = fallbackRes.data?.shipping_fee || 0;
-                        }
-
-                        shippingData.set(itemId, cost);
-                        GLOBAL_SHIPPING_CACHE.set(itemId, cost);
-                    } catch (err) {
-                        console.error(`Shipping Error (${itemId}):`, err.message);
-                    }
-                }
-            }
-
-            // 4. Fetch Suggestions for Precise Costs (v5.1 - Try Suggestions First)
+            // 2. Fetch Costs via Pricing Reference API (v6.0 - Unified Source)
             try {
-                const sugRes = await axios.get(`https://api.mercadolibre.com/suggestions/items/${itemId}/details`, {
+                // We use the detail endpoint to get precise selling_fees and shipping_fees
+                const detailRes = await axios.get(`https://api.mercadolibre.com/suggestions/items/${itemId}/details`, {
                     headers: { Authorization: `Bearer ${accessToken}` }
                 });
-                if (sugRes.data && sugRes.data.costs) {
-                    const costs = sugRes.data.costs;
-                    if (costs.sale_fee !== undefined) {
-                        const current = feeData.get(itemId) || { saleFee: 0, financingFee: 0 };
-                        feeData.set(itemId, { ...current, saleFee: costs.sale_fee, isSug: true });
-                    }
-                    if (costs.shipping_cost !== undefined) {
-                        shippingData.set(itemId, costs.shipping_cost);
-                    }
+
+                if (detailRes.data && detailRes.data.costs) {
+                    const c = detailRes.data.costs;
+                    feeData.set(itemId, {
+                        saleFee: c.selling_fees || 0,
+                        financingFee: 0, // Suggestions API combines fees into selling_fees
+                        isSug: true
+                    });
+                    shippingData.set(itemId, c.shipping_fees || 0);
+                } else {
+                    // Fallback to basic 15% and 0 shipping if details missing
+                    feeData.set(itemId, { saleFee: item.price * 0.15, financingFee: 0, isEstimate: true });
+                    shippingData.set(itemId, 0);
                 }
             } catch (err) {
-                // If Suggestions fail (like the 404 we saw), we keep the data from step 2 & 3
-                // console.log(`[Suggestions API] No suggestions for ${itemId} (404)`);
+                // Fail-safe fallback
+                feeData.set(itemId, { saleFee: item.price * 0.15, financingFee: 0, isEstimate: true });
+                shippingData.set(itemId, 0);
             }
         }));
 
