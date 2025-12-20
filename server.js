@@ -52,7 +52,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v2.2 - CONFIG CHECK - ${new Date().toISOString()}
+        v2.3 - Buy Box Fix - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
