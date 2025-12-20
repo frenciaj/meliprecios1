@@ -40,6 +40,9 @@ const renderPage = (title, content) => `
     <div class="container">
         ${content}
     </div>
+    <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
+        v2.0 - Cookie Auth - ${new Date().toISOString()}
+    </footer>
 </body>
 </html>
 `;
