@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v6.0 - Unified Pricing Reference API - ${new Date().toISOString()}
+        v6.1 - UI Polish - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -327,7 +327,6 @@ app.get('/listings', async (req, res) => {
 
             const netIncomeFormatted = `$ ${netIncome.toLocaleString('es-AR')}`;
             const saleFeeFormatted = `$ ${fees.saleFee.toLocaleString('es-AR')}${fees.isEstimate ? ' (Est.)' : ''}`;
-            const financingFeeFormatted = `$ ${fees.financingFee.toLocaleString('es-AR')}`;
             const shipFeeFormatted = `$ ${shipFee.toLocaleString('es-AR')}`;
 
             return `
