@@ -85,11 +85,11 @@ app.get('/auth', (req, res) => {
     const state = base64URLEncode(crypto.randomBytes(16));
 
     // Store verifier and state in HTTP-only cookies
-    // Vercel is HTTPS, so we should use secure: true and sameSite: none to allow cross-site redirects if needed
+    // Use sameSite: 'lax' to allow cookies during OAuth redirects
     const cookieOptions = {
         httpOnly: true,
         secure: true,
-        sameSite: 'none',
+        sameSite: 'lax',
         maxAge: 600000 // 10 mins
     };
 
@@ -172,7 +172,7 @@ app.get('/callback', async (req, res) => {
         const accessToken = response.data.access_token;
 
         // Store access token
-        const cookieOptions = { httpOnly: true, secure: true, sameSite: 'none', maxAge: 21000 * 1000 };
+        const cookieOptions = { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 21000 * 1000 };
         res.cookie('access_token', accessToken, cookieOptions);
 
         res.redirect('/listings');
