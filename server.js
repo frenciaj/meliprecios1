@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v9.2 - Filter Fix - ${new Date().toISOString()}
+        v9.3 - UI Translation - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -489,13 +489,13 @@ app.get('/listings', async (req, res) => {
                     <table id="listings-table">
                         <thead>
                             <tr>
-                                <th>Image</th>
-                                <th onclick="sortTable(1, 'text')" style="cursor: pointer;" data-column="1">Title <span id="sort-icon-1"></span></th>
-                                <th onclick="sortTable(2, 'number')" style="cursor: pointer;" data-column="2">Price (Base) <span id="sort-icon-2"></span></th>
+                                <th>Imagen</th>
+                                <th onclick="sortTable(1, 'text')" style="cursor: pointer;" data-column="1">Nombre <span id="sort-icon-1"></span></th>
+                                <th onclick="sortTable(2, 'number')" style="cursor: pointer;" data-column="2">Precio (Base) <span id="sort-icon-2"></span></th>
                                 <th onclick="sortTable(3, 'number')" style="cursor: pointer; color: #00a650;" data-column="3">Promoción <span id="sort-icon-3"></span></th>
-                                <th onclick="sortTable(4, 'number')" style="cursor: pointer;" data-column="4">Net Income <span id="sort-icon-4"></span></th>
-                                <th onclick="sortTable(5, 'number')" style="cursor: pointer;" data-column="5">Price to Win <span id="sort-icon-5"></span></th>
-                                <th onclick="sortTable(6, 'number')" style="cursor: pointer;" data-column="6">Qty <span id="sort-icon-6"></span></th>
+                                <th onclick="sortTable(4, 'number')" style="cursor: pointer;" data-column="4">Lo que recibis <span id="sort-icon-4"></span></th>
+                                <th onclick="sortTable(5, 'number')" style="cursor: pointer;" data-column="5">Precio para Ganar <span id="sort-icon-5"></span></th>
+                                <th onclick="sortTable(6, 'number')" style="cursor: pointer;" data-column="6">Cant <span id="sort-icon-6"></span></th>
                                 <th onclick="sortTable(7, 'text')" style="cursor: pointer;" data-column="7">Status <span id="sort-icon-7"></span></th>
                                 <th onclick="sortTable(8, 'text')" style="cursor: pointer;" data-column="8">Buy Box <span id="sort-icon-8"></span></th>
                                 <th>Action</th>
