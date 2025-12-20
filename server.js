@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v8.5 - Final Candidate Patch - ${new Date().toISOString()}
+        v8.6 - Participating Status UI - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -736,6 +736,17 @@ app.get('/promotions', async (req, res) => {
             const allItemsRaw = [...cand, ...start, ...invit, ...pend];
             const candidateIds = [...new Set(allItemsRaw.map(r => r.id).filter(id => id))];
 
+            // Create a lookup map for promo status and price
+            const promoInfoMap = {};
+            allItemsRaw.forEach(r => {
+                if (r.id) {
+                    promoInfoMap[r.id] = {
+                        status: r.status,
+                        promoPrice: r.price || r.min_discounted_price || null
+                    };
+                }
+            });
+
             console.log(`[Promotions] Found ${candidateIds.length} unique items for campaign ${activeCampaignId}`);
 
             if (candidateIds.length > 0) {
@@ -751,7 +762,11 @@ app.get('/promotions', async (req, res) => {
                         // Items multiget returns [{code: 200, body: {...}}, ...]
                         const validItems = itemsResponse.data
                             .filter(res => res.code === 200 && res.body)
-                            .map(res => res.body);
+                            .map(res => {
+                                const body = res.body;
+                                body.promo_info = promoInfoMap[body.id] || {};
+                                return body;
+                            });
 
                         candidates = candidates.concat(validItems);
                     } catch (e) {
@@ -770,6 +785,9 @@ app.get('/promotions', async (req, res) => {
 
         const candidatesHtml = candidates.map(item => {
             const brand = item.attributes?.find(a => a.id === 'BRAND')?.value_name || 'N/A';
+            const isStarted = item.promo_info?.status === 'started';
+            const promoPrice = item.promo_info?.promoPrice;
+
             return `
                 <div class="promo-card">
                     <div class="promo-header">
@@ -781,12 +799,21 @@ app.get('/promotions', async (req, res) => {
                     </div>
                     <div class="promo-price-row">
                         <div>
-                            <div style="font-size: 0.75rem; color: #999;">Precio Actual</div>
-                            <div style="font-weight: 600;">$ ${item.price.toLocaleString('es-AR')}</div>
+                            ${isStarted ? `
+                                <div style="font-size: 0.7rem; color: #999; text-decoration: line-through;">Previo: $ ${item.price.toLocaleString('es-AR')}</div>
+                                <div style="font-weight: 700; color: #00a650; font-size: 1.1rem;">$ ${promoPrice ? promoPrice.toLocaleString('es-AR') : '---'}</div>
+                            ` : `
+                                <div style="font-size: 0.75rem; color: #999;">Precio Actual</div>
+                                <div style="font-weight: 600;">$ ${item.price.toLocaleString('es-AR')}</div>
+                            `}
                         </div>
-                        <button class="btn-participate" onclick="participate('${item.id}', '${activeCampaignId}', '${activeCampaignType}', ${item.price})">
-                            Participar
-                        </button>
+                        ${isStarted ? `
+                            <button class="btn-participate" style="background: #00a650; cursor: default;">Participando</button>
+                        ` : `
+                            <button class="btn-participate" onclick="participate('${item.id}', '${activeCampaignId}', '${activeCampaignType}', ${item.price})">
+                                Participar
+                            </button>
+                        `}
                     </div>
                 </div>
             `;
