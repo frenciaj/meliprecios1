@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v6.3 - Global Brand Search - ${new Date().toISOString()}
+        v7.0 - Full Catalog Discovery - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -215,12 +215,29 @@ app.get('/listings', async (req, res) => {
         });
         const userId = userResponse.data.id;
 
-        const searchResponse = await axios.get(`https://api.mercadolibre.com/users/${userId}/items/search`, {
-            headers: { Authorization: `Bearer ${accessToken}` },
-            params: { status: 'active,paused,closed,under_review' }
-        });
+        let itemIds = [];
+        let offset = 0;
+        let total = 1; // Start with 1 to enter loop
 
-        const itemIds = searchResponse.data.results;
+        while (itemIds.length < total) {
+            const searchResponse = await axios.get(`https://api.mercadolibre.com/users/${userId}/items/search`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                params: {
+                    status: 'active,paused,closed,under_review',
+                    limit: 100,
+                    offset: offset,
+                    search_type: 'scan'
+                }
+            });
+
+            const results = searchResponse.data.results || [];
+            itemIds = itemIds.concat(results);
+            total = searchResponse.data.paging.total;
+            offset += results.length;
+
+            // Safety break to prevent infinite loops if total is misreported
+            if (results.length === 0) break;
+        }
 
         let allItems = [];
         if (itemIds.length > 0) {
