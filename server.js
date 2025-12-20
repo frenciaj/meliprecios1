@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v9.0 - Accurate Sale Prices - ${new Date().toISOString()}
+        v9.1 - Dedicated Promo Column - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -259,6 +259,7 @@ app.get('/listings', async (req, res) => {
         const buyBoxData = new Map();
         const feeData = new Map();
         const shippingData = new Map();
+        const salePriceData = new Map();
 
         await Promise.all(allItems.map(async (itemWrapper) => {
             if (itemWrapper.code !== 200) return;
@@ -274,11 +275,26 @@ app.get('/listings', async (req, res) => {
                     });
                     buyBoxData.set(itemId, { status: pbRes.data.status, priceToWin: pbRes.data.price_to_win });
                 } catch (err) {
-                    console.error(`BuyBox Error (${itemId}):`, err.message);
+                    // console.error(`BuyBox Error (${itemId}):`, err.message);
                 }
             }
 
-            // 2. Fetch Costs via Pricing Reference API (v6.0 - Unified Source)
+            // 2. Fetch Actual Sale Price (v9.1 strategy - The most accurate)
+            try {
+                const spRes = await axios.get(`https://api.mercadolibre.com/items/${itemId}/sale_price`, {
+                    headers: { Authorization: `Bearer ${accessToken}` }
+                });
+                if (spRes.data && spRes.data.amount) {
+                    salePriceData.set(itemId, {
+                        amount: spRes.data.amount,
+                        regular: spRes.data.regular_amount || item.price
+                    });
+                }
+            } catch (err) {
+                // Ignore 404/others, use base item price as fallback
+            }
+
+            // 3. Fetch Costs via Pricing Reference API (v6.0 - Unified Source)
             try {
                 // We use the detail endpoint to get precise selling_fees and shipping_fees
                 const detailRes = await axios.get(`https://api.mercadolibre.com/suggestions/items/${itemId}/details`, {
@@ -310,25 +326,14 @@ app.get('/listings', async (req, res) => {
             if (itemWrapper.code !== 200) return '';
             const item = itemWrapper.body;
 
-            // Determine if there's an active promotion/discount
-            // 1. Try to find a 'promotion' type in the prices array (New v9.0 Strategy)
-            let promoPrice = null;
-            let promoOriginal = null;
-
-            if (item.prices && Array.isArray(item.prices.prices)) {
-                const promo = item.prices.prices.find(p => p.type === 'promotion' || p.type === 'standard' && p.regular_amount);
-                if (promo && promo.amount < (promo.regular_amount || item.price)) {
-                    promoPrice = promo.amount;
-                    promoOriginal = promo.regular_amount;
-                }
-            }
-
-            const currentPrice = Number(promoPrice || item.price) || 0;
-            const originalPrice = Number(promoOriginal || item.original_price || item.base_price) || currentPrice;
+            // Determine if there's an active promotion/discount (v9.1 Strategy)
+            const spData = salePriceData.get(item.id);
+            const currentPrice = spData ? spData.amount : item.price;
+            const originalPrice = spData ? spData.regular : (item.original_price || item.base_price || item.price);
             const hasPromo = originalPrice > currentPrice;
 
             if (index < 5) {
-                console.log(`[Item Debug] ID: ${item.id}, Price: ${currentPrice}, Orig: ${originalPrice}, HasPromo: ${hasPromo}, RawPrice: ${item.price}, PricesArrayFound: ${!!item.prices}`);
+                console.log(`[Item Debug v9.1] ID: ${item.id}, FinalSalePrice: ${currentPrice}, BasePrice: ${item.price}, OrigPrice: ${originalPrice}, HasPromo: ${hasPromo}`);
             }
 
             // Determine buy box status and price to win
@@ -386,20 +391,27 @@ app.get('/listings', async (req, res) => {
                     <td>
                         <div class="price-edit-container" data-item-id="${item.id}">
                             <div class="price-display">
-                                ${hasPromo ? `
-                                    <div style="font-size: 0.75rem; color: #999; text-decoration: line-through;">$ ${originalPrice.toLocaleString('es-AR')}</div>
-                                    <div class="price-value" style="color: #00a650; font-weight: 700;">$ ${currentPrice.toLocaleString('es-AR')}</div>
-                                ` : `
-                                    <span class="price-value">$ ${currentPrice.toLocaleString('es-AR')}</span>
-                                `}
-                                <button class="edit-price-btn" onclick="editPrice('${item.id}', ${currentPrice})">✏️</button>
+                                <span class="price-value">$ ${Number(item.price).toLocaleString('es-AR')}</span>
+                                <button class="edit-price-btn" onclick="editPrice('${item.id}', ${item.price})">✏️</button>
                             </div>
                             <div class="price-edit-form" style="display: none;">
-                                <input type="number" class="price-input" value="${currentPrice}" step="0.01" min="0" onkeydown="if(event.key === 'Enter') savePrice('${item.id}'); else if(event.key === 'Escape') cancelEdit('${item.id}')" />
+                                <input type="number" class="price-input" value="${item.price}" step="0.01" min="0" onkeydown="if(event.key === 'Enter') savePrice('${item.id}'); else if(event.key === 'Escape') cancelEdit('${item.id}')" />
                                 <button class="save-price-btn" onclick="savePrice('${item.id}')">✓</button>
                                 <button class="cancel-price-btn" onclick="cancelEdit('${item.id}')">✗</button>
                             </div>
                         </div>
+                    </td>
+                    <td style="text-align: center;">
+                        ${hasPromo ? `
+                            <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">
+                                $ ${currentPrice.toLocaleString('es-AR')}
+                            </div>
+                            <div style="font-size: 0.7rem; color: #666; background: #e6f7ee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">
+                                En Promoción
+                            </div>
+                        ` : `
+                            <span style="color: #ccc;">---</span>
+                        `}
                     </td>
                     <td class="net-income-cell" style="font-weight: 600; color: #00a650;">
                         ${netIncomeFormatted}
@@ -410,9 +422,9 @@ app.get('/listings', async (req, res) => {
                                 <span class="tooltip-value">$ ${currentPrice.toLocaleString('es-AR')}</span>
                             </div>
                             ${hasPromo ? `
-                            <div class="tooltip-row" style="font-size: 0.7rem; color: #999; margin-top: -5px; margin-bottom: 5px;">
-                                <span class="tooltip-label">Normal:</span>
-                                <span class="tooltip-value" style="text-decoration: line-through;">$ ${originalPrice.toLocaleString('es-AR')}</span>
+                            <div class="tooltip-row" style="font-size: 0.7rem; color: #999; padding-left: 10px;">
+                                <span class="tooltip-label">Base:</span>
+                                <span class="tooltip-value">$ ${originalPrice.toLocaleString('es-AR')}</span>
                             </div>
                             ` : ''}
                             <div class="tooltip-row">
@@ -479,12 +491,13 @@ app.get('/listings', async (req, res) => {
                             <tr>
                                 <th>Image</th>
                                 <th onclick="sortTable(1, 'text')" style="cursor: pointer;" data-column="1">Title <span id="sort-icon-1"></span></th>
-                                <th onclick="sortTable(2, 'number')" style="cursor: pointer;" data-column="2">Price <span id="sort-icon-2"></span></th>
-                                <th onclick="sortTable(3, 'number')" style="cursor: pointer;" data-column="3">Net Income <span id="sort-icon-3"></span></th>
-                                <th onclick="sortTable(4, 'number')" style="cursor: pointer;" data-column="4">Price to Win <span id="sort-icon-4"></span></th>
-                                <th onclick="sortTable(5, 'number')" style="cursor: pointer;" data-column="5">Qty <span id="sort-icon-5"></span></th>
-                                <th onclick="sortTable(6, 'text')" style="cursor: pointer;" data-column="6">Status <span id="sort-icon-6"></span></th>
-                                <th onclick="sortTable(7, 'text')" style="cursor: pointer;" data-column="7">Buy Box <span id="sort-icon-7"></span></th>
+                                <th onclick="sortTable(2, 'number')" style="cursor: pointer;" data-column="2">Price (Base) <span id="sort-icon-2"></span></th>
+                                <th onclick="sortTable(3, 'number')" style="cursor: pointer; color: #00a650;" data-column="3">Promoción <span id="sort-icon-3"></span></th>
+                                <th onclick="sortTable(4, 'number')" style="cursor: pointer;" data-column="4">Net Income <span id="sort-icon-4"></span></th>
+                                <th onclick="sortTable(5, 'number')" style="cursor: pointer;" data-column="5">Price to Win <span id="sort-icon-5"></span></th>
+                                <th onclick="sortTable(6, 'number')" style="cursor: pointer;" data-column="6">Qty <span id="sort-icon-6"></span></th>
+                                <th onclick="sortTable(7, 'text')" style="cursor: pointer;" data-column="7">Status <span id="sort-icon-7"></span></th>
+                                <th onclick="sortTable(8, 'text')" style="cursor: pointer;" data-column="8">Buy Box <span id="sort-icon-8"></span></th>
                                 <th>Action</th>
                             </tr>
                         </thead>
