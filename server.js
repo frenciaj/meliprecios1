@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v5.1 - Suggestions Fallback - ${new Date().toISOString()}
+        v5.2 - Stability & Cleanup - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -145,7 +145,6 @@ app.get('/callback', async (req, res) => {
                     Keys: ${cookiesReceived.join(', ') || 'NONE'}<br>
                     PKCE State: ${cookieState || 'UNDEFINED'}<br>
                     PKCE Verifier: ${codeVerifier ? 'PRESENT' : 'UNDEFINED'}<br><br>
-149: 
                     <strong>Validation Logic:</strong><br>
                     State Match: ${(state === cookieState).toString().toUpperCase()}<br>
                     Verifier OK: ${(!!codeVerifier).toString().toUpperCase()}<br>
