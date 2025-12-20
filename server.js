@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.5.1 - Diagnostic Logs - ${new Date().toISOString()}
+        v4.5.2 - Super Robust Fee Engine - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -263,20 +263,29 @@ app.get('/listings', async (req, res) => {
                 feeData.set(itemId, GLOBAL_FEE_CACHE.get(cacheKey));
             } else {
                 try {
-                    console.log(`[Fee Debug] Req ${itemId}: P=${item.price}, C=${item.category_id}, T=${normalizedType}`);
+                    // console.log(`[Fee Debug] Req ${itemId}: P=${item.price}, C=${item.category_id}`);
                     const fRes = await axios.get(`https://api.mercadolibre.com/sites/MLA/listing_prices`, {
                         headers: { Authorization: `Bearer ${accessToken}` },
                         params: {
                             price: item.price,
                             category_id: item.category_id,
-                            listing_type_id: normalizedType,
                             quantity: 1
                         }
                     });
-                    console.log(`[Fee Debug] Res ${itemId}: ${JSON.stringify(fRes.data)}`);
 
                     const fees = Array.isArray(fRes.data) ? fRes.data : [fRes.data];
-                    const feeInfo = fees[0];
+
+                    // Match the item's listing_type_id against the possibilities
+                    let feeInfo = fees.find(f =>
+                        f.listing_type_id === item.listing_type_id ||
+                        LISTING_TYPE_ALIASES[item.listing_type_id] === f.listing_type_id ||
+                        LISTING_TYPE_ALIASES[f.listing_type_id] === item.listing_type_id
+                    );
+
+                    // Fallback to first available if no exact match (Meli API can be inconsistent)
+                    if (!feeInfo && fees.length > 0) {
+                        feeInfo = fees[0];
+                    }
 
                     if (feeInfo) {
                         let finFee = 0;
@@ -288,10 +297,20 @@ app.get('/listings', async (req, res) => {
                         feeData.set(itemId, result);
                         GLOBAL_FEE_CACHE.set(cacheKey, result);
                     } else {
-                        console.warn(`No fee data for ${itemId} (Type: ${normalizedType})`);
+                        // HARD FALLBACK: If API fails or returns no fees, use estimates (ARS typicals)
+                        let estimatedPercent = 0.13; // Default approx 13% for classic
+                        if (item.listing_type_id === 'gold_pro' || item.listing_type_id === 'premium') estimatedPercent = 0.27; // approx 27%
+
+                        const estFee = item.price * estimatedPercent;
+                        const result = { saleFee: estFee, financingFee: 0, isEstimate: true };
+                        feeData.set(itemId, result);
+                        console.warn(`[Fee Warning] Using estimate for ${itemId} (${item.listing_type_id})`);
                     }
                 } catch (err) {
                     console.error(`Fee Error (${itemId}):`, err.message);
+                    // Catch-all fallback
+                    const estFee = item.price * 0.15;
+                    feeData.set(itemId, { saleFee: estFee, financingFee: 0, isEstimate: true });
                 }
             }
 
