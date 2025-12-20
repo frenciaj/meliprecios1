@@ -43,6 +43,21 @@ app.use(express.json()); // Parse JSON request bodies
 const base64URLEncode = (str) => str.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest();
 
+const renderDebugError = (title, msg, details = {}) => {
+    return renderPage('System Error', `
+        <div class="card">
+            <h2 style="color: #d00000;">${title}</h2>
+            <p>${msg}</p>
+            <div style="background: #222; color: #0f0; padding: 15px; margin: 15px 0; border-radius: 4px; text-align: left; font-family: monospace; font-size: 0.8rem; overflow-x: auto;">
+                <strong>DEBUG REPORT (v8.1):</strong><br>
+                ---------------------------<br>
+                ${Object.entries(details).map(([k, v]) => `<strong>${k}:</strong> ${typeof v === 'object' ? JSON.stringify(v, null, 2) : v}`).join('<br>')}
+            </div>
+            <a href="/" class="btn-primary">Go Home</a>
+        </div>
+    `);
+};
+
 // HTML Layout Helper
 const renderPage = (title, content, activeTab = 'listings') => `
 <!DOCTYPE html>
@@ -74,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v8.0 - Promotions Tab Integration - ${new Date().toISOString()}
+        v8.1 - Resilience & Debugging - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -142,39 +157,17 @@ app.get('/callback', async (req, res) => {
 
     if (!code || !state) return res.redirect('/');
 
-    // Unified Debug View Helper
-    const renderDebugError = (title, msg, details = {}) => {
-        return renderPage('Debug Error', `
-            <div class="card">
-                <h2 style="color: #d00000;">${title}</h2>
-                <p>${msg}</p>
-                <div style="background: #222; color: #0f0; padding: 15px; margin: 15px 0; border-radius: 4px; text-align: left; font-family: monospace; font-size: 0.8rem; overflow-x: auto;">
-                    <strong>DEBUG REPORT (v2.2):</strong><br>
-                    ---------------------------<br>
-                    <strong>Request Query:</strong><br>
-                    State: ${state}<br>
-                    Code (Last 4): ...${code ? code.slice(-4) : 'NONE'}<br><br>
-                    
-                    <strong>Cookies Received:</strong><br>
-                    Keys: ${cookiesReceived.join(', ') || 'NONE'}<br>
-                    PKCE State: ${cookieState || 'UNDEFINED'}<br>
-                    PKCE Verifier: ${codeVerifier ? 'PRESENT' : 'UNDEFINED'}<br><br>
-                    <strong>Validation Logic:</strong><br>
-                    State Match: ${(state === cookieState).toString().toUpperCase()}<br>
-                    Verifier OK: ${(!!codeVerifier).toString().toUpperCase()}<br>
-                    
-                    ${details.apiError ? `<br><strong>API Error:</strong><br>${JSON.stringify(details.apiError, null, 2)}` : ''}
-                </div>
-                <a href="/" class="btn-primary">Try Again</a>
-            </div>
-        `);
-    };
-
     // Validation
     if (!cookieState || state !== cookieState || !codeVerifier) {
         return res.status(400).send(renderDebugError(
             'Session Validation Failed',
-            'We could not verify your security session. This usually means cookies are blocked or the session expired.'
+            'We could not verify your security session.',
+            {
+                state,
+                cookieState,
+                codeVerifier: codeVerifier ? 'PRESENT' : 'MISSING',
+                cookies: cookiesReceived.join(', ')
+            }
         ));
     }
 
@@ -732,11 +725,15 @@ app.get('/promotions', async (req, res) => {
                 const batches = chunkArray(candidateIds, 20);
 
                 for (const batch of batches) {
-                    const itemsResponse = await axios.get(`https://api.mercadolibre.com/items`, {
-                        headers: { Authorization: `Bearer ${accessToken}` },
-                        params: { ids: batch.join(',') }
-                    });
-                    candidates = candidates.concat(itemsResponse.data);
+                    try {
+                        const itemsResponse = await axios.get(`https://api.mercadolibre.com/items`, {
+                            headers: { Authorization: `Bearer ${accessToken}` },
+                            params: { ids: batch.join(',') }
+                        });
+                        candidates = candidates.concat(itemsResponse.data.filter(i => i && i.id));
+                    } catch (e) {
+                        console.error('Batch Item Fetch Error:', e.message);
+                    }
                 }
             }
         }
@@ -837,7 +834,7 @@ app.get('/promotions', async (req, res) => {
         console.error('Promotions Error:', error.message);
         res.status(500).send(renderDebugError('Error en Promociones', 'No se pudieron cargar las promociones.', {
             message: error.message,
-            response: error.response?.data
+            api_response: error.response?.data
         }));
     }
 });
