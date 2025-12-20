@@ -2,18 +2,15 @@ const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
 const path = require('path');
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Serve static files from 'public' directory
+// Middleware
 app.use(express.static(path.join(__dirname, 'public')));
-
-// In-memory storage
-let accessToken = null;
-let refreshToken = null;
-const pkceStore = new Map();
+app.use(cookieParser());
 
 // Helpers
 const base64URLEncode = (str) => str.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -35,7 +32,7 @@ const renderPage = (title, content) => `
         <div class="header-content">
             <h1>Meli Connector</h1>
         </div>
-        ${accessToken ? '<a href="/">Logout</a>' : ''}
+        <a href="/">Home</a>
     </header>
     <div class="container">
         ${content}
@@ -46,6 +43,9 @@ const renderPage = (title, content) => `
 
 // Routes
 app.get('/', (req, res) => {
+    // Check for token in cookies
+    const accessToken = req.cookies.access_token;
+
     if (accessToken) {
         res.redirect('/listings');
     } else {
@@ -63,7 +63,11 @@ app.get('/auth', (req, res) => {
     const verifier = base64URLEncode(crypto.randomBytes(32));
     const challenge = base64URLEncode(sha256(verifier));
     const state = base64URLEncode(crypto.randomBytes(16));
-    pkceStore.set(state, verifier);
+
+    // Store verifier and state in HTTP-only cookies (Stateless storage for Vercel)
+    // Max age: 10 minutes
+    res.cookie('pkce_verifier', verifier, { httpOnly: true, maxAge: 600000 });
+    res.cookie('pkce_state', state, { httpOnly: true, maxAge: 600000 });
 
     const authUrl = `https://auth.mercadolibre.com.ar/authorization` +
         `?response_type=code` +
@@ -78,11 +82,35 @@ app.get('/auth', (req, res) => {
 
 app.get('/callback', async (req, res) => {
     const { code, state } = req.query;
+    const cookieState = req.cookies.pkce_state;
+    const codeVerifier = req.cookies.pkce_verifier;
+
     if (!code || !state) return res.redirect('/');
 
-    const codeVerifier = pkceStore.get(state);
-    if (!codeVerifier) return res.status(400).send('Invalid state');
-    pkceStore.delete(state);
+    // Validate state
+    if (!cookieState || state !== cookieState) {
+        return res.status(400).send(renderPage('Error', `
+            <div class="card">
+                <h2>Security Error</h2>
+                <p>Invalid state parameter. Your session may have expired.</p>
+                <a href="/" class="btn-primary">Try Again</a>
+            </div>
+        `));
+    }
+
+    if (!codeVerifier) {
+        return res.status(400).send(renderPage('Error', `
+            <div class="card">
+                <h2>Session Expired</h2>
+                <p>Could not find code verifier. Please try again.</p>
+                <a href="/" class="btn-primary">Try Again</a>
+            </div>
+        `));
+    }
+
+    // Clear one-time cookies
+    res.clearCookie('pkce_state');
+    res.clearCookie('pkce_verifier');
 
     try {
         const response = await axios.post('https://api.mercadolibre.com/oauth/token', null, {
@@ -97,8 +125,12 @@ app.get('/callback', async (req, res) => {
             }
         });
 
-        accessToken = response.data.access_token;
-        refreshToken = response.data.refresh_token;
+        const accessToken = response.data.access_token;
+        const refreshToken = response.data.refresh_token; // In real app, store securely
+
+        // Store access token in cookie for simplicity in this demo
+        res.cookie('access_token', accessToken, { httpOnly: true, maxAge: 21000 * 1000 }); // 6 hours
+
         res.redirect('/listings');
 
     } catch (error) {
@@ -106,7 +138,7 @@ app.get('/callback', async (req, res) => {
         res.send(renderPage('Error', `
             <div class="card">
                 <h2>Authentication Failed</h2>
-                <p>${error.message}</p>
+                <p>${error.response ? JSON.stringify(error.response.data) : error.message}</p>
                 <a href="/" class="btn-primary">Try Again</a>
             </div>
         `));
@@ -114,6 +146,8 @@ app.get('/callback', async (req, res) => {
 });
 
 app.get('/listings', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+
     if (!accessToken) return res.redirect('/');
 
     try {
@@ -187,15 +221,24 @@ app.get('/listings', async (req, res) => {
                     </table>
                 ` : '<p>No active listings found.</p>'}
             </div>
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="/logout" style="color: #666; text-decoration: none;">Logout</a>
+            </div>
         `;
 
         res.send(renderPage('My Listings', content));
 
     } catch (error) {
         console.error('Listings Error:', error.message);
-        res.send(renderPage('Error', `<p>Error fetching listings: ${error.message}</p>`));
+        res.send(renderPage('Error', `<p>Error fetching listings: ${error.message}</p><a href="/logout">Logout</a>`));
     }
 });
+
+app.get('/logout', (req, res) => {
+    res.clearCookie('access_token');
+    res.redirect('/');
+});
+
 
 // Export app for Vercel
 module.exports = app;
