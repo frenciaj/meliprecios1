@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v8.3 - Robust Item Discovery - ${new Date().toISOString()}
+        v8.4 - Deep Candidate Fetching - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -707,6 +707,7 @@ app.get('/promotions', async (req, res) => {
         let activeCampaignId = req.query.campaign_id || (campaigns.length > 0 ? campaigns[0].id : null);
         let activeCampaignType = req.query.type || (campaigns.length > 0 ? campaigns[0].type : null);
 
+        let rawApiData = {};
         if (activeCampaignId) {
             console.log(`[Promotions] Fetching items for ID: ${activeCampaignId}, Type: ${activeCampaignType}`);
 
@@ -716,19 +717,23 @@ app.get('/promotions', async (req, res) => {
                         headers: { Authorization: `Bearer ${accessToken}` },
                         params: { promotion_type: activeCampaignType, status, app_version: 'v2' }
                     });
+                    rawApiData[status] = res.data;
                     return res.data.results || res.data.items || [];
                 } catch (e) {
                     console.error(`[Promotions] API Error for ${status}:`, e.response?.data || e.message);
+                    rawApiData[status + '_error'] = e.response?.data || e.message;
                     return [];
                 }
             };
 
-            const [candidatesRaw, startedRaw] = await Promise.all([
+            const [cand, start, invit, pend] = await Promise.all([
                 fetchByStatus('candidate'),
-                fetchByStatus('started')
+                fetchByStatus('started'),
+                fetchByStatus('invitation'),
+                fetchByStatus('pending')
             ]);
 
-            const allItemsRaw = [...candidatesRaw, ...startedRaw];
+            const allItemsRaw = [...cand, ...start, ...invit, ...pend];
             const candidateIds = [...new Set(allItemsRaw.map(r => r.id).filter(id => id))];
 
             console.log(`[Promotions] Found ${candidateIds.length} unique items for campaign ${activeCampaignId}`);
@@ -812,11 +817,14 @@ app.get('/promotions', async (req, res) => {
 
                 <details style="margin-top: 40px; color: #ccc; font-size: 0.7rem; cursor: pointer; text-align: left;">
                     <summary>Debug API Info</summary>
-                    <pre style="background: #f4f4f4; padding: 10px; color: #666; overflow: auto; max-height: 200px; margin-top: 10px; border-radius: 4px;">
+                    <pre style="background: #f4f4f4; padding: 10px; color: #666; overflow: auto; max-height: 400px; margin-top: 10px; border-radius: 4px;">
 Selected ID: ${activeCampaignId}
 Selected Type: ${activeCampaignType}
 Campaigns Count: ${campaigns.length}
 Items Loaded: ${candidates.length}
+
+--- RAW API DATA ---
+${JSON.stringify(rawApiData, null, 2)}
                     </pre>
                 </details>
             </div>
