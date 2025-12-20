@@ -375,20 +375,20 @@ app.get('/listings', async (req, res) => {
                         
                         // Price editing functions
                         window.editPrice = function(itemId, currentPrice) {
-                            const container = document.querySelector(`.price - edit - container[data - item - id= "${itemId}"]`);
+                            const container = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"]');
                             container.querySelector('.price-display').style.display = 'none';
                             container.querySelector('.price-edit-form').style.display = 'flex';
                             container.querySelector('.price-input').focus();
                         };
                         
                         window.cancelEdit = function(itemId) {
-                            const container = document.querySelector(`.price - edit - container[data - item - id="${itemId}"]`);
+                            const container = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"]');
                             container.querySelector('.price-display').style.display = 'flex';
                             container.querySelector('.price-edit-form').style.display = 'none';
                         };
                         
                         window.savePrice = async function(itemId) {
-                            const container = document.querySelector(`.price - edit - container[data - item - id="${itemId}"]`);
+                            const container = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"]');
                             const input = container.querySelector('.price-input');
                             const newPrice = parseFloat(input.value);
                             
@@ -407,7 +407,7 @@ app.get('/listings', async (req, res) => {
                                 const response = await fetch('/update-price', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ itemId, newPrice })
+                                    body: JSON.stringify({ itemId: itemId, newPrice: newPrice })
                                 });
                                 
                                 const result = await response.json();
@@ -429,7 +429,7 @@ app.get('/listings', async (req, res) => {
                         };
                     </script>
                 ` : '<p>No active listings found.</p>'
-    }
+            }
             </div >
         <div style="text-align: center; margin-top: 20px;">
             <a href="/logout" style="color: #666; text-decoration: none;">Logout</a>
@@ -440,7 +440,7 @@ app.get('/listings', async (req, res) => {
 
     } catch (error) {
         console.error('Listings Error:', error.message);
-        res.send(renderPage('Error', `< p > Error fetching listings: ${ error.message }</p > <a href="/logout">Logout</a>`));
+        res.send(renderPage('Error', `< p > Error fetching listings: ${error.message}</p > <a href="/logout">Logout</a>`));
     }
 });
 
@@ -467,21 +467,21 @@ app.post('/update-price', async (req, res) => {
         // Update price via Mercado Libre API
         await axios.put(
             `https://api.mercadolibre.com/items/${itemId}`,
-    { price: parseFloat(newPrice) },
-    {
-        headers: {
-            Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-        }
-    }
+            { price: parseFloat(newPrice) },
+            {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            }
         );
 
-return res.json({ success: true, message: 'Price updated successfully' });
+        return res.json({ success: true, message: 'Price updated successfully' });
     } catch (error) {
-    console.error('Update price error:', error.message);
-    const errorMsg = error.response?.data?.message || error.message || 'Failed to update price';
-    return res.status(500).json({ success: false, error: errorMsg });
-}
+        console.error('Update price error:', error.message);
+        const errorMsg = error.response?.data?.message || error.message || 'Failed to update price';
+        return res.status(500).json({ success: false, error: errorMsg });
+    }
 });
 
 
