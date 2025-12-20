@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v8.2 - Promotion Diagnostics - ${new Date().toISOString()}
+        v8.3 - Robust Item Discovery - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -708,23 +708,30 @@ app.get('/promotions', async (req, res) => {
         let activeCampaignType = req.query.type || (campaigns.length > 0 ? campaigns[0].type : null);
 
         if (activeCampaignId) {
-            const candidatesRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/promotions/${activeCampaignId}/items`, {
-                headers: { Authorization: `Bearer ${accessToken}` },
-                params: {
-                    promotion_type: activeCampaignType,
-                    // status: 'candidate', // Removed to see more items
-                    app_version: 'v2'
+            console.log(`[Promotions] Fetching items for ID: ${activeCampaignId}, Type: ${activeCampaignType}`);
+
+            const fetchByStatus = async (status) => {
+                try {
+                    const res = await axios.get(`https://api.mercadolibre.com/seller-promotions/promotions/${activeCampaignId}/items`, {
+                        headers: { Authorization: `Bearer ${accessToken}` },
+                        params: { promotion_type: activeCampaignType, status, app_version: 'v2' }
+                    });
+                    return res.data.results || res.data.items || [];
+                } catch (e) {
+                    console.error(`[Promotions] API Error for ${status}:`, e.response?.data || e.message);
+                    return [];
                 }
-            }).catch(e => {
-                console.error(`[Promo Debug] Error fetching for ${activeCampaignId}:`, e.response?.data || e.message);
-                return { data: { results: [] } };
-            });
+            };
 
-            console.log(`[Promo Debug] Found ${candidatesRes.data.results?.length || 0} results / ${candidatesRes.data.items?.length || 0} items for campaign ${activeCampaignId}`);
+            const [candidatesRaw, startedRaw] = await Promise.all([
+                fetchByStatus('candidate'),
+                fetchByStatus('started')
+            ]);
 
-            // Handle both possible response structures
-            const activeItems = candidatesRes.data.results || candidatesRes.data.items || [];
-            const candidateIds = activeItems.map(r => r.id).filter(id => id) || [];
+            const allItemsRaw = [...candidatesRaw, ...startedRaw];
+            const candidateIds = [...new Set(allItemsRaw.map(r => r.id).filter(id => id))];
+
+            console.log(`[Promotions] Found ${candidateIds.length} unique items for campaign ${activeCampaignId}`);
 
             if (candidateIds.length > 0) {
                 const chunkArray = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size));
@@ -794,10 +801,24 @@ app.get('/promotions', async (req, res) => {
                     </div>
                 ` : `
                     <div style="text-align: center; padding: 60px; background: #fdfdfd; border: 1px dashed #ddd; border-radius: 8px;">
-                        <div style="font-size: 3rem; margin-bottom: 10px;">🏷️</div>
-                        <p style="color: #666;">Selecciona una campaña para ver los productos que pueden participar.</p>
+                        <div style="font-size: 3rem; margin-bottom: 10px;">${activeCampaignId ? '🔍' : '🏷️'}</div>
+                        <p style="color: #666;">
+                            ${activeCampaignId
+                ? 'No se encontraron productos elegibles para esta campaña. Puede que ya estén participando o no califiquen.'
+                : 'Selecciona una campaña para ver los productos que pueden participar.'}
+                        </p>
                     </div>
                 `}
+
+                <details style="margin-top: 40px; color: #ccc; font-size: 0.7rem; cursor: pointer; text-align: left;">
+                    <summary>Debug API Info</summary>
+                    <pre style="background: #f4f4f4; padding: 10px; color: #666; overflow: auto; max-height: 200px; margin-top: 10px; border-radius: 4px;">
+Selected ID: ${activeCampaignId}
+Selected Type: ${activeCampaignType}
+Campaigns Count: ${campaigns.length}
+Items Loaded: ${candidates.length}
+                    </pre>
+                </details>
             </div>
 
             <script>
