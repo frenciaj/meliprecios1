@@ -44,7 +44,7 @@ const base64URLEncode = (str) => str.toString('base64').replace(/\+/g, '-').repl
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest();
 
 // HTML Layout Helper
-const renderPage = (title, content) => `
+const renderPage = (title, content, activeTab = 'listings') => `
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -59,13 +59,22 @@ const renderPage = (title, content) => `
         <div class="header-content">
             <h1>Meli Connector</h1>
         </div>
-        <a href="/">Home</a>
+        <div style="display: flex; gap: 20px; align-items: center;">
+            <a href="/">Home</a>
+            <a href="/logout" style="color: #d32f2f;">Logout</a>
+        </div>
     </header>
+    
+    <nav class="tabs-nav">
+        <a href="/listings" class="tab-link ${activeTab === 'listings' ? 'active' : ''}">Listados</a>
+        <a href="/promotions" class="tab-link ${activeTab === 'promotions' ? 'active' : ''}">Promociones</a>
+    </nav>
+
     <div class="container">
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v7.0 - Full Catalog Discovery - ${new Date().toISOString()}
+        v8.0 - Promotions Tab Integration - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -80,15 +89,15 @@ app.get('/', (req, res) => {
         res.redirect('/listings');
     } else {
         res.send(renderPage('Home', `
-            <div class="login-card">
-                <h2>Welcome to Mercado Libre Connector</h2>
-                <p style="color: #666; margin-bottom: 30px;">Connect your account to view and manage your listings.</p>
-                <a href="/auth" class="btn-primary">Connect with Mercado Libre</a>
-                <div style="margin-top: 20px; font-size: 0.8rem;">
-                    <a href="/debug-config" style="color: #999;">Diagnostic Config</a>
+                <div class="login-card">
+                    <h2>Welcome to Mercado Libre Connector</h2>
+                    <p style="color: #666; margin-bottom: 30px;">Connect your account to view and manage your listings.</p>
+                    <a href="/auth" class="btn-primary">Connect with Mercado Libre</a>
+                    <div style="margin-top: 20px; font-size: 0.8rem;">
+                        <a href="/debug-config" style="color: #999;">Diagnostic Config</a>
+                    </div>
                 </div>
-            </div>
-        `));
+            `, 'none'));
     }
 });
 
@@ -641,16 +650,13 @@ app.get('/listings', async (req, res) => {
                     </script>
                 ` : '<p>No active listings found.</p>'}
             </div>
-        <div style="text-align: center; margin-top: 20px;">
-            <a href="/logout" style="color: #666; text-decoration: none;">Logout</a>
-        </div>
     `;
 
-        res.send(renderPage('My Listings', content));
+        res.send(renderPage('My Listings', content, 'listings'));
 
     } catch (error) {
         console.error('Listings Error:', error.message);
-        res.send(renderPage('Error', `<p>Error fetching listings: ${error.message}</p><a href="/logout">Logout</a>`));
+        res.send(renderPage('Error', `<p>Error fetching listings: ${error.message}</p>`, 'listings'));
     }
 });
 
@@ -683,6 +689,181 @@ app.post('/update-quantity', async (req, res) => {
         return res.json({ success: true });
     } catch (error) {
         return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/promotions', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+    if (!accessToken) return res.redirect('/');
+
+    try {
+        const userResponse = await axios.get('https://api.mercadolibre.com/users/me', {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const userId = userResponse.data.id;
+
+        // 1. Fetch available promotions v2
+        const promotionsResponse = await axios.get(`https://api.mercadolibre.com/seller-promotions/users/${userId}?app_version=v2`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        const campaigns = promotionsResponse.data.results || [];
+
+        // 2. Fetch candidates for the first active campaign (as a starting point)
+        let candidates = [];
+        let activeCampaignId = req.query.campaign_id || (campaigns.length > 0 ? campaigns[0].id : null);
+        let activeCampaignType = req.query.type || (campaigns.length > 0 ? campaigns[0].type : null);
+
+        if (activeCampaignId) {
+            const candidatesRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/promotions/${activeCampaignId}/items`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                params: {
+                    promotion_type: activeCampaignType,
+                    status: 'candidate',
+                    app_version: 'v2'
+                }
+            }).catch(e => ({ data: { results: [] } }));
+
+            // For each candidate, fetch its full details (picture, title, brand) in batches
+            const candidateIds = candidatesRes.data.results?.map(r => r.id) || [];
+
+            if (candidateIds.length > 0) {
+                const chunkArray = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size));
+                const batches = chunkArray(candidateIds, 20);
+
+                for (const batch of batches) {
+                    const itemsResponse = await axios.get(`https://api.mercadolibre.com/items`, {
+                        headers: { Authorization: `Bearer ${accessToken}` },
+                        params: { ids: batch.join(',') }
+                    });
+                    candidates = candidates.concat(itemsResponse.data);
+                }
+            }
+        }
+
+        const campaignsHtml = campaigns.map(c => `
+            <div class="campaign-chip ${c.id === activeCampaignId ? 'active' : ''}" 
+                 onclick="window.location.href='/promotions?campaign_id=${c.id}&type=${c.type}'">
+                ${c.name || c.id} (${c.type})
+            </div>
+        `).join('');
+
+        const candidatesHtml = candidates.map(item => {
+            const brand = item.attributes?.find(a => a.id === 'BRAND')?.value_name || 'N/A';
+            return `
+                <div class="promo-card">
+                    <div class="promo-header">
+                        <img src="${item.thumbnail}" alt="" class="promo-img">
+                        <div class="promo-info">
+                            <div class="promo-title">${item.title}</div>
+                            <div class="promo-meta">ID: ${item.id} | Marca: ${brand}</div>
+                        </div>
+                    </div>
+                    <div class="promo-price-row">
+                        <div>
+                            <div style="font-size: 0.75rem; color: #999;">Precio Actual</div>
+                            <div style="font-weight: 600;">$ ${item.price.toLocaleString('es-AR')}</div>
+                        </div>
+                        <button class="btn-participate" onclick="participate('${item.id}', '${activeCampaignId}', '${activeCampaignType}', ${item.price})">
+                            Participar
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const content = `
+            <div class="card">
+                <h2 style="margin-bottom: 20px;">Central de Promociones</h2>
+                
+                <div style="margin-bottom: 15px; font-weight: 600; color: var(--text-gray);">Campañas Disponibles:</div>
+                <div class="campaigns-panel">
+                    ${campaignsHtml || '<p style="color: #999; padding: 10px;">No hay campañas activas en este momento.</p>'}
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 30px 0 15px;">
+                    <h3 style="margin: 0;">Productos Candidatos (${candidates.length})</h3>
+                </div>
+
+                ${candidates.length > 0 ? `
+                    <div class="promos-grid">
+                        ${candidatesHtml}
+                    </div>
+                ` : `
+                    <div style="text-align: center; padding: 60px; background: #fdfdfd; border: 1px dashed #ddd; border-radius: 8px;">
+                        <div style="font-size: 3rem; margin-bottom: 10px;">🏷️</div>
+                        <p style="color: #666;">Selecciona una campaña para ver los productos que pueden participar.</p>
+                    </div>
+                `}
+            </div>
+
+            <script>
+                window.participate = async function(itemId, promoId, promoType, currentPrice) {
+                    const dealPrice = prompt('Ingrese el precio de oferta para este producto (Actual: $' + currentPrice + '):', currentPrice);
+                    if (dealPrice === null || dealPrice === "") return;
+                    
+                    const price = parseFloat(dealPrice);
+                    if (isNaN(price)) return alert('Precio inválido');
+
+                    try {
+                        const response = await fetch('/apply-promotion', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                item_id: itemId,
+                                promotion_id: promoId,
+                                promotion_type: promoType,
+                                deal_price: price
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        if (result.success) {
+                            alert('¡Éxito! El producto se ha sumado a la promoción.');
+                            location.reload();
+                        } else {
+                            alert('Error: ' + result.error);
+                        }
+                    } catch (error) {
+                        alert('Error al aplicar la promoción: ' + error.message);
+                    }
+                }
+            </script>
+        `;
+
+        res.send(renderPage('Promociones', content, 'promotions'));
+
+    } catch (error) {
+        console.error('Promotions Error:', error.message);
+        res.status(500).send(renderDebugError('Error en Promociones', 'No se pudieron cargar las promociones.', {
+            message: error.message,
+            response: error.response?.data
+        }));
+    }
+});
+
+app.post('/apply-promotion', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+    if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const { item_id, promotion_id, promotion_type, deal_price } = req.body;
+
+    try {
+        await axios.post(`https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`, {
+            promotion_id,
+            promotion_type,
+            deal_price
+        }, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Apply Promo Error:', error.response?.data || error.message);
+        res.status(500).json({
+            success: false,
+            error: error.response?.data?.message || error.message
+        });
     }
 });
 
