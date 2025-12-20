@@ -53,7 +53,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v3.2 - Enter to Save Price - ${new Date().toISOString()}
+        v4.0 - Qty Editing & Inactive Listings - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -201,7 +201,7 @@ app.get('/listings', async (req, res) => {
 
         const searchResponse = await axios.get(`https://api.mercadolibre.com/users/${userId}/items/search`, {
             headers: { Authorization: `Bearer ${accessToken}` },
-            params: { status: 'active' }
+            params: { status: 'active,paused,closed,under_review' }
         });
 
         const itemIds = searchResponse.data.results;
@@ -299,14 +299,26 @@ app.get('/listings', async (req, res) => {
                                 <button class="edit-price-btn" onclick="editPrice('${item.id}', ${item.price})">✏️</button>
                             </div>
                             <div class="price-edit-form" style="display: none;">
-                                <input type="number" class="price-input" value="${item.price}" step="0.01" min="0" onkeypress="if(event.key === 'Enter') savePrice('${item.id}')" />
+                                <input type="number" class="price-input" value="${item.price}" step="0.01" min="0" onkeydown="if(event.key === 'Enter') savePrice('${item.id}'); else if(event.key === 'Escape') cancelEdit('${item.id}')" />
                                 <button class="save-price-btn" onclick="savePrice('${item.id}')">✓</button>
                                 <button class="cancel-price-btn" onclick="cancelEdit('${item.id}')">✗</button>
                             </div>
                         </div>
                     </td>
                     <td>${priceToWin}</td>
-                    <td>${item.available_quantity}</td>
+                    <td>
+                        <div class="qty-edit-container" data-item-id="${item.id}">
+                            <div class="qty-display">
+                                <span class="qty-value">${item.available_quantity}</span>
+                                <button class="edit-qty-btn" onclick="editQty('${item.id}', ${item.available_quantity})">✏️</button>
+                            </div>
+                            <div class="qty-edit-form" style="display: none;">
+                                <input type="number" class="qty-input" value="${item.available_quantity}" step="1" min="0" onkeydown="if(event.key === 'Enter') saveQty('${item.id}'); else if(event.key === 'Escape') cancelQtyEdit('${item.id}')" />
+                                <button class="save-qty-btn" onclick="saveQty('${item.id}')">✓</button>
+                                <button class="cancel-qty-btn" onclick="cancelQtyEdit('${item.id}')">✗</button>
+                            </div>
+                        </div>
+                    </td>
                     <td><span class="status-badge status-${item.status}">${item.status}</span></td>
                     <td><span class="status-badge ${buyBoxClass}">${buyBoxStatus}</span></td>
                     <td><a href="${item.permalink}" target="_blank" class="link-btn">View @ Meli</a></td>
@@ -428,6 +440,59 @@ app.get('/listings', async (req, res) => {
                             }
                         };
                         
+                        // Quantity editing functions
+                        window.editQty = function(itemId, currentQty) {
+                            const container = document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"]');
+                            container.querySelector('.qty-display').style.display = 'none';
+                            container.querySelector('.qty-edit-form').style.display = 'flex';
+                            container.querySelector('.qty-input').focus();
+                        };
+                        
+                        window.cancelQtyEdit = function(itemId) {
+                            const container = document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"]');
+                            container.querySelector('.qty-display').style.display = 'flex';
+                            container.querySelector('.qty-edit-form').style.display = 'none';
+                        };
+                        
+                        window.saveQty = async function(itemId) {
+                            const container = document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"]');
+                            const input = container.querySelector('.qty-input');
+                            const newQty = parseInt(input.value);
+                            
+                            if (isNaN(newQty) || newQty < 0) {
+                                alert('Please enter a valid quantity');
+                                return;
+                            }
+                            
+                            const saveBtn = container.querySelector('.save-qty-btn');
+                            const originalText = saveBtn.textContent;
+                            saveBtn.textContent = '⏳';
+                            saveBtn.disabled = true;
+                            
+                            try {
+                                const response = await fetch('/update-quantity', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ itemId: itemId, newQuantity: newQty })
+                                });
+                                
+                                const result = await response.json();
+                                
+                                if (result.success) {
+                                    container.querySelector('.qty-value').textContent = newQty;
+                                    container.querySelector('.qty-display').style.display = 'flex';
+                                    container.querySelector('.qty-edit-form').style.display = 'none';
+                                } else {
+                                    alert('Error: ' + result.error);
+                                }
+                            } catch (error) {
+                                alert('Failed to update quantity: ' + error.message);
+                            } finally {
+                                saveBtn.textContent = originalText;
+                                saveBtn.disabled = false;
+                            }
+                        };
+                        
                         // Table sorting functionality
                         let currentSortColumn = null;
                         let currentSortDirection = 'asc';
@@ -543,6 +608,48 @@ app.post('/update-price', async (req, res) => {
         return res.status(500).json({ success: false, error: errorMsg });
     }
 });
+
+
+// Update item quantity
+app.post('/update-quantity', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+
+    if (!accessToken) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+    }
+
+    const { itemId, newQuantity } = req.body;
+
+    // Validation
+    if (!itemId || newQuantity === undefined || newQuantity === null) {
+        return res.status(400).json({ success: false, error: 'Missing itemId or newQuantity' });
+    }
+
+    if (newQuantity < 0) {
+        return res.status(400).json({ success: false, error: 'Quantity cannot be negative' });
+    }
+
+    try {
+        // Update quantity via Mercado Libre API
+        await axios.put(
+            `https://api.mercadolibre.com/items/${itemId}`,
+            { available_quantity: parseInt(newQuantity) },
+            {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        return res.json({ success: true, message: 'Quantity updated successfully' });
+    } catch (error) {
+        console.error('Update quantity error:', error.message);
+        const errorMsg = error.response?.data?.message || error.message || 'Failed to update quantity';
+        return res.status(500).json({ success: false, error: errorMsg });
+    }
+});
+
 
 
 app.get('/logout', (req, res) => {

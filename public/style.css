@@ -236,3 +236,76 @@ tr:last-child td {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* Quantity Editing */
+.qty-edit-container {
+    display: flex;
+    align-items: center;
+}
+
+.qty-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.qty-value {
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.edit-qty-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.8rem;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+    padding: 2px;
+}
+
+.edit-qty-btn:hover {
+    opacity: 1;
+}
+
+.qty-edit-form {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.qty-input {
+    width: 60px;
+    padding: 4px 6px;
+    border: 1px solid var(--meli-blue);
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.save-qty-btn,
+.cancel-qty-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 2px 4px;
+    transition: transform 0.1s;
+}
+
+.save-qty-btn:hover,
+.cancel-qty-btn:hover {
+    transform: scale(1.2);
+}
+
+.save-qty-btn {
+    color: #00a650;
+}
+
+.cancel-qty-btn {
+    color: #d32f2f;
+}
+
+.save-qty-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
