@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v9.1 - Dedicated Promo Column - ${new Date().toISOString()}
+        v9.2 - Filter Fix - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -519,7 +519,7 @@ app.get('/listings', async (req, res) => {
                             for (let i = 0; i < rows.length; i++) {
                                 const row = rows[i];
                                 const itemDetailsText = row.cells[1].textContent.toLowerCase(); // Contains title, ID, and brand
-                                const rowStatus = row.cells[6].textContent.toLowerCase().trim();
+                                const rowStatus = row.cells[7].textContent.toLowerCase().trim();
                                 
                                 const matchesSearch = itemDetailsText.includes(query);
                                 const matchesStatus = status === 'all' || rowStatus === status;
@@ -661,7 +661,7 @@ app.get('/listings', async (req, res) => {
                                 currentSortColumn = columnIndex;
                             }
                             
-                            for (let i = 1; i <= 7; i++) {
+                            for (let i = 1; i <= 8; i++) {
                                 const icon = document.getElementById('sort-icon-' + i);
                                 if (icon) icon.textContent = '';
                             }
