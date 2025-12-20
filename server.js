@@ -41,7 +41,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v2.0 - Cookie Auth - ${new Date().toISOString()}
+        v2.1 - DEEP DEBUG MODE - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -97,25 +97,45 @@ app.get('/callback', async (req, res) => {
     const { code, state } = req.query;
     const cookieState = req.cookies.pkce_state;
     const codeVerifier = req.cookies.pkce_verifier;
+    const cookiesReceived = Object.keys(req.cookies);
 
     if (!code || !state) return res.redirect('/');
 
-    // Debugging info for user if validation fails
-    if (!cookieState || state !== cookieState || !codeVerifier) {
-        return res.status(400).send(renderPage('Error', `
+    // Unified Debug View Helper
+    const renderDebugError = (title, msg, details = {}) => {
+        return renderPage('Debug Error', `
             <div class="card">
-                <h2>Security/Session Error</h2>
-                <p>There was a problem verifying your session.</p>
-                <div style="background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 4px; text-align: left; font-family: monospace; font-size: 0.8rem;">
-                    <strong>Debug Info:</strong><br>
-                    Received State: ${state}<br>
-                    Cookie State: ${cookieState || 'undefined'}<br>
-                    Verifier Present: ${codeVerifier ? 'Yes' : 'No'}
+                <h2 style="color: #d00000;">${title}</h2>
+                <p>${msg}</p>
+                <div style="background: #222; color: #0f0; padding: 15px; margin: 15px 0; border-radius: 4px; text-align: left; font-family: monospace; font-size: 0.8rem; overflow-x: auto;">
+                    <strong>DEBUG REPORT (v2.1):</strong><br>
+                    ---------------------------<br>
+                    <strong>Request Query:</strong><br>
+                    State: ${state}<br>
+                    Code (Last 4): ...${code ? code.slice(-4) : 'NONE'}<br><br>
+                    
+                    <strong>Cookies Received:</strong><br>
+                    Keys: ${cookiesReceived.join(', ') || 'NONE'}<br>
+                    PKCE State: ${cookieState || 'UNDEFINED'}<br>
+                    PKCE Verifier: ${codeVerifier ? 'PRESENT' : 'UNDEFINED'}<br><br>
+
+                    <strong>Validation Logic:</strong><br>
+                    State Match: ${(state === cookieState).toString().toUpperCase()}<br>
+                    Verifier OK: ${(!!codeVerifier).toString().toUpperCase()}<br>
+                    
+                    ${details.apiError ? `<br><strong>API Error:</strong><br>${JSON.stringify(details.apiError, null, 2)}` : ''}
                 </div>
-                <p>Please try clicking the button below to start a fresh connection.</p>
                 <a href="/" class="btn-primary">Try Again</a>
             </div>
-        `));
+        `);
+    };
+
+    // Validation
+    if (!cookieState || state !== cookieState || !codeVerifier) {
+        return res.status(400).send(renderDebugError(
+            'Session Validation Failed',
+            'We could not verify your security session. This usually means cookies are blocked or the session expired.'
+        ));
     }
 
     // Clear one-time cookies
@@ -136,22 +156,20 @@ app.get('/callback', async (req, res) => {
         });
 
         const accessToken = response.data.access_token;
-        const refreshToken = response.data.refresh_token; // In real app, store securely
 
-        // Store access token in cookie for simplicity in this demo
-        res.cookie('access_token', accessToken, { httpOnly: true, maxAge: 21000 * 1000 }); // 6 hours
+        // Store access token
+        const cookieOptions = { httpOnly: true, secure: true, sameSite: 'none', maxAge: 21000 * 1000 };
+        res.cookie('access_token', accessToken, cookieOptions);
 
         res.redirect('/listings');
 
     } catch (error) {
         console.error('Auth Error:', error.message);
-        res.send(renderPage('Error', `
-            <div class="card">
-                <h2>Authentication Failed</h2>
-                <p>${error.response ? JSON.stringify(error.response.data) : error.message}</p>
-                <a href="/" class="btn-primary">Try Again</a>
-            </div>
-        `));
+        return res.status(500).send(renderDebugError(
+            'Mercado Libre API Error',
+            'Authentication was rejected by Mercado Libre.',
+            { apiError: error.response ? error.response.data : error.message }
+        ));
     }
 });
 
