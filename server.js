@@ -53,7 +53,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.1 - Status Filtering - ${new Date().toISOString()}
+        v4.2 - Net Income Column - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -220,30 +220,62 @@ app.get('/listings', async (req, res) => {
             }
         }
 
-        // Fetch buy box winner status using price_to_win endpoint
+        // Fetch buy box winner status and sale fees
         const buyBoxData = new Map();
+        const feeData = new Map();
 
-        // Process items to get buy box status
+        // Process items to get buy box status and fees
         for (const itemWrapper of allItems) {
-            if (itemWrapper.code === 200 && itemWrapper.body.catalog_product_id) {
-                const itemId = itemWrapper.body.id;
+            if (itemWrapper.code === 200) {
+                const item = itemWrapper.body;
+                const itemId = item.id;
+
+                // 1. Fetch Buy Box Status (only for catalog items)
+                if (item.catalog_product_id) {
+                    try {
+                        const priceToWinResponse = await axios.get(
+                            `https://api.mercadolibre.com/items/${itemId}/price_to_win`,
+                            {
+                                headers: { Authorization: `Bearer ${accessToken}` },
+                                params: { siteId: 'MLA', version: 'v2' }
+                            }
+                        );
+
+                        buyBoxData.set(itemId, {
+                            status: priceToWinResponse.data.status,
+                            priceToWin: priceToWinResponse.data.price_to_win
+                        });
+                    } catch (error) {
+                        console.error(`Error fetching price_to_win for ${itemId}:`, error.message);
+                        buyBoxData.set(itemId, { status: 'error', priceToWin: null });
+                    }
+                }
+
+                // 2. Fetch Listing Fees (for all items)
                 try {
-                    const priceToWinResponse = await axios.get(
-                        `https://api.mercadolibre.com/items/${itemId}/price_to_win`,
+                    const feeResponse = await axios.get(
+                        `https://api.mercadolibre.com/sites/MLA/listing_prices`,
                         {
                             headers: { Authorization: `Bearer ${accessToken}` },
-                            params: { siteId: 'MLA', version: 'v2' }
+                            params: {
+                                price: item.price,
+                                listing_type_id: item.listing_type_id,
+                                category_id: item.category_id,
+                                currency_id: item.currency_id,
+                                quantity: 1
+                            }
                         }
                     );
 
-                    // Store both status and price_to_win
-                    buyBoxData.set(itemId, {
-                        status: priceToWinResponse.data.status,
-                        priceToWin: priceToWinResponse.data.price_to_win
-                    });
+                    if (feeResponse.data && feeResponse.data.length > 0) {
+                        // The API returns an array of listing types, match with item.listing_type_id
+                        const feeInfo = feeResponse.data.find(f => f.listing_type_id === item.listing_type_id);
+                        if (feeInfo) {
+                            feeData.set(itemId, feeInfo.sale_fee_amount);
+                        }
+                    }
                 } catch (error) {
-                    console.error(`Error fetching price_to_win for ${itemId}:`, error.message);
-                    buyBoxData.set(itemId, { status: 'error', priceToWin: null });
+                    console.error(`Error fetching fees for ${itemId}:`, error.message);
                 }
             }
         }
@@ -283,6 +315,10 @@ app.get('/listings', async (req, res) => {
                 }
             }
 
+            const fee = feeData.get(item.id) || 0;
+            const netIncome = item.price - fee;
+            const netIncomeFormatted = `$ ${netIncome.toLocaleString('es-AR')}`;
+
             return `
                 <tr>
                     <td>
@@ -305,6 +341,7 @@ app.get('/listings', async (req, res) => {
                             </div>
                         </div>
                     </td>
+                    <td style="font-weight: 500; color: #00a650;">${netIncomeFormatted}</td>
                     <td>${priceToWin}</td>
                     <td>
                         <div class="qty-edit-container" data-item-id="${item.id}">
@@ -356,10 +393,11 @@ app.get('/listings', async (req, res) => {
                                 <th>Image</th>
                                 <th onclick="sortTable(1, 'text')" style="cursor: pointer;" data-column="1">Title <span id="sort-icon-1"></span></th>
                                 <th onclick="sortTable(2, 'number')" style="cursor: pointer;" data-column="2">Price <span id="sort-icon-2"></span></th>
-                                <th onclick="sortTable(3, 'number')" style="cursor: pointer;" data-column="3">Price to Win <span id="sort-icon-3"></span></th>
-                                <th onclick="sortTable(4, 'number')" style="cursor: pointer;" data-column="4">Qty <span id="sort-icon-4"></span></th>
-                                <th onclick="sortTable(5, 'text')" style="cursor: pointer;" data-column="5">Status <span id="sort-icon-5"></span></th>
-                                <th onclick="sortTable(6, 'text')" style="cursor: pointer;" data-column="6">Buy Box <span id="sort-icon-6"></span></th>
+                                <th onclick="sortTable(3, 'number')" style="cursor: pointer;" data-column="3">Net Income <span id="sort-icon-3"></span></th>
+                                <th onclick="sortTable(4, 'number')" style="cursor: pointer;" data-column="4">Price to Win <span id="sort-icon-4"></span></th>
+                                <th onclick="sortTable(5, 'number')" style="cursor: pointer;" data-column="5">Qty <span id="sort-icon-5"></span></th>
+                                <th onclick="sortTable(6, 'text')" style="cursor: pointer;" data-column="6">Status <span id="sort-icon-6"></span></th>
+                                <th onclick="sortTable(7, 'text')" style="cursor: pointer;" data-column="7">Buy Box <span id="sort-icon-7"></span></th>
                                 <th>Action</th>
                             </tr>
                         </thead>
@@ -382,7 +420,7 @@ app.get('/listings', async (req, res) => {
                                 const row = rows[i];
                                 const title = row.cells[1].textContent.toLowerCase();
                                 const id = row.cells[1].textContent.toLowerCase();
-                                const rowStatus = row.cells[5].textContent.toLowerCase().trim();
+                                const rowStatus = row.cells[6].textContent.toLowerCase().trim();
                                 
                                 const matchesSearch = title.includes(query) || id.includes(query);
                                 const matchesStatus = status === 'all' || rowStatus === status;
@@ -528,7 +566,7 @@ app.get('/listings', async (req, res) => {
                             }
                             
                             // Clear all sort icons
-                            for (let i = 1; i <= 6; i++) {
+                            for (let i = 1; i <= 7; i++) {
                                 const icon = document.getElementById('sort-icon-' + i);
                                 if (icon) icon.textContent = '';
                             }
