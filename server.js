@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v8.6 - Participating Status UI - ${new Date().toISOString()}
+        v8.7 - Rich Promotion Modal - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -742,7 +742,11 @@ app.get('/promotions', async (req, res) => {
                 if (r.id) {
                     promoInfoMap[r.id] = {
                         status: r.status,
-                        promoPrice: r.price || r.min_discounted_price || null
+                        price: r.price, // For started items
+                        min: r.min_discounted_price,
+                        max: r.max_discounted_price,
+                        suggested: r.suggested_discounted_price,
+                        original: r.original_price
                     };
                 }
             });
@@ -785,8 +789,19 @@ app.get('/promotions', async (req, res) => {
 
         const candidatesHtml = candidates.map(item => {
             const brand = item.attributes?.find(a => a.id === 'BRAND')?.value_name || 'N/A';
-            const isStarted = item.promo_info?.status === 'started';
-            const promoPrice = item.promo_info?.promoPrice;
+            const info = item.promo_info || {};
+            const isStarted = info.status === 'started';
+
+            // Prepare data for the modal
+            const modalData = JSON.stringify({
+                id: item.id,
+                title: item.title,
+                original: item.price,
+                min: info.min,
+                max: info.max,
+                suggested: info.suggested,
+                current: info.price || info.suggested || (item.price * 0.9)
+            }).replace(/"/g, '&quot;');
 
             return `
                 <div class="promo-card">
@@ -801,19 +816,17 @@ app.get('/promotions', async (req, res) => {
                         <div>
                             ${isStarted ? `
                                 <div style="font-size: 0.7rem; color: #999; text-decoration: line-through;">Previo: $ ${item.price.toLocaleString('es-AR')}</div>
-                                <div style="font-weight: 700; color: #00a650; font-size: 1.1rem;">$ ${promoPrice ? promoPrice.toLocaleString('es-AR') : '---'}</div>
+                                <div style="font-weight: 700; color: #00a650; font-size: 1.1rem;">$ ${info.price?.toLocaleString('es-AR') || '---'}</div>
                             ` : `
                                 <div style="font-size: 0.75rem; color: #999;">Precio Actual</div>
                                 <div style="font-weight: 600;">$ ${item.price.toLocaleString('es-AR')}</div>
                             `}
                         </div>
-                        ${isStarted ? `
-                            <button class="btn-participate" style="background: #00a650; cursor: default;">Participando</button>
-                        ` : `
-                            <button class="btn-participate" onclick="participate('${item.id}', '${activeCampaignId}', '${activeCampaignType}', ${item.price})">
-                                Participar
-                            </button>
-                        `}
+                        <button class="btn-participate" 
+                                style="${isStarted ? 'background: #00a650;' : ''}"
+                                onclick="openPromoModal(${modalData}, '${activeCampaignId}', '${activeCampaignType}')">
+                            ${isStarted ? 'Participando' : 'Participar'}
+                        </button>
                     </div>
                 </div>
             `;
@@ -861,37 +874,110 @@ ${JSON.stringify(rawApiData, null, 2)}
                 </details>
             </div>
 
-            <script>
-                window.participate = async function(itemId, promoId, promoType, currentPrice) {
-                    const dealPrice = prompt('Ingrese el precio de oferta para este producto (Actual: $' + currentPrice + '):', currentPrice);
-                    if (dealPrice === null || dealPrice === "") return;
+            <!-- Promotion Modal -->
+            <div id="promoModal" class="modal-overlay">
+                <div class="modal-box">
+                    <div class="modal-header">
+                        <div class="modal-title">Configurar Promoción</div>
+                        <button class="close-modal" onclick="closePromoModal()">&times;</button>
+                    </div>
                     
-                    const price = parseFloat(dealPrice);
-                    if (isNaN(price)) return alert('Precio inválido');
+                    <div id="modalProductTitle" style="font-size: 0.9rem; margin-bottom: 20px; color: #666; font-weight: 500;"></div>
+
+                    <div class="price-guidelines">
+                        <div class="guideline-item">
+                            <span class="guideline-label">Precio Original:</span>
+                            <span class="guideline-value" id="guideOriginal">$ 0</span>
+                        </div>
+                        <div class="guideline-item">
+                            <span class="guideline-label">Mínimo sugerido:</span>
+                            <span class="guideline-value" id="guideMin">$ 0</span>
+                        </div>
+                        <div class="guideline-item">
+                            <span class="guideline-label">Máximo permitido:</span>
+                            <span class="guideline-value" id="guideMax">$ 0</span>
+                        </div>
+                        <div class="guideline-item" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ced4da;">
+                            <span class="guideline-label">Sugerencia Meli:</span>
+                            <span class="guideline-value suggested" id="guideSuggested">$ 0</span>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label class="input-label">Tu precio de oferta:</label>
+                        <div class="modal-input-wrapper">
+                            <input type="number" id="promoDealPrice" class="modal-input" placeholder="0.00">
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button class="btn-modal btn-modal-cancel" onclick="closePromoModal()">Cancelar</button>
+                        <button id="btnConfirmPromo" class="btn-modal btn-modal-confirm">Confirmar Oferta</button>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                let currentPromoData = null;
+
+                window.openPromoModal = function(data, promoId, promoType) {
+                    currentPromoData = { ...data, promoId, promoType };
+                    
+                    document.getElementById('modalProductTitle').textContent = data.title;
+                    document.getElementById('guideOriginal').textContent = '$ ' + (data.original?.toLocaleString() || '---');
+                    document.getElementById('guideMin').textContent = '$ ' + (data.min?.toLocaleString() || '---');
+                    document.getElementById('guideMax').textContent = '$ ' + (data.max?.toLocaleString() || '---');
+                    document.getElementById('guideSuggested').textContent = '$ ' + (data.suggested?.toLocaleString() || '---');
+                    
+                    document.getElementById('promoDealPrice').value = data.current || data.suggested || data.original;
+                    
+                    document.getElementById('promoModal').style.display = 'flex';
+                };
+
+                window.closePromoModal = function() {
+                    document.getElementById('promoModal').style.display = 'none';
+                };
+
+                document.getElementById('btnConfirmPromo').onclick = async function() {
+                    const price = parseFloat(document.getElementById('promoDealPrice').value);
+                    if (!price || isNaN(price)) return alert('Por favor ingrese un precio válido.');
+
+                    const btn = this;
+                    btn.disabled = true;
+                    btn.textContent = 'Enviando...';
 
                     try {
                         const response = await fetch('/apply-promotion', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                item_id: itemId,
-                                promotion_id: promoId,
-                                promotion_type: promoType,
+                                item_id: currentPromoData.id,
+                                promotion_id: currentPromoData.promoId,
+                                promotion_type: currentPromoData.promoType,
                                 deal_price: price
                             })
                         });
                         
                         const result = await response.json();
                         if (result.success) {
-                            alert('¡Éxito! El producto se ha sumado a la promoción.');
+                            alert('¡Éxito! La promoción se ha configurado correctamente.');
                             location.reload();
                         } else {
                             alert('Error: ' + result.error);
+                            btn.disabled = false;
+                            btn.textContent = 'Confirmar Oferta';
                         }
                     } catch (error) {
                         alert('Error al aplicar la promoción: ' + error.message);
+                        btn.disabled = false;
+                        btn.textContent = 'Confirmar Oferta';
                     }
-                }
+                };
+
+                // Close modal on escape key
+                window.onkeydown = function(e) {
+                    if (e.key === 'Escape') closePromoModal();
+                };
             </script>
         `;
 
