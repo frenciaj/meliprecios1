@@ -8,6 +8,9 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy for Vercel
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(cookieParser());
@@ -64,10 +67,17 @@ app.get('/auth', (req, res) => {
     const challenge = base64URLEncode(sha256(verifier));
     const state = base64URLEncode(crypto.randomBytes(16));
 
-    // Store verifier and state in HTTP-only cookies (Stateless storage for Vercel)
-    // Max age: 10 minutes
-    res.cookie('pkce_verifier', verifier, { httpOnly: true, maxAge: 600000 });
-    res.cookie('pkce_state', state, { httpOnly: true, maxAge: 600000 });
+    // Store verifier and state in HTTP-only cookies
+    // Vercel is HTTPS, so we should use secure: true and sameSite: none to allow cross-site redirects if needed
+    const cookieOptions = {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        maxAge: 600000 // 10 mins
+    };
+
+    res.cookie('pkce_verifier', verifier, cookieOptions);
+    res.cookie('pkce_state', state, cookieOptions);
 
     const authUrl = `https://auth.mercadolibre.com.ar/authorization` +
         `?response_type=code` +
@@ -87,22 +97,19 @@ app.get('/callback', async (req, res) => {
 
     if (!code || !state) return res.redirect('/');
 
-    // Validate state
-    if (!cookieState || state !== cookieState) {
+    // Debugging info for user if validation fails
+    if (!cookieState || state !== cookieState || !codeVerifier) {
         return res.status(400).send(renderPage('Error', `
             <div class="card">
-                <h2>Security Error</h2>
-                <p>Invalid state parameter. Your session may have expired.</p>
-                <a href="/" class="btn-primary">Try Again</a>
-            </div>
-        `));
-    }
-
-    if (!codeVerifier) {
-        return res.status(400).send(renderPage('Error', `
-            <div class="card">
-                <h2>Session Expired</h2>
-                <p>Could not find code verifier. Please try again.</p>
+                <h2>Security/Session Error</h2>
+                <p>There was a problem verifying your session.</p>
+                <div style="background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 4px; text-align: left; font-family: monospace; font-size: 0.8rem;">
+                    <strong>Debug Info:</strong><br>
+                    Received State: ${state}<br>
+                    Cookie State: ${cookieState || 'undefined'}<br>
+                    Verifier Present: ${codeVerifier ? 'Yes' : 'No'}
+                </div>
+                <p>Please try clicking the button below to start a fresh connection.</p>
                 <a href="/" class="btn-primary">Try Again</a>
             </div>
         `));
