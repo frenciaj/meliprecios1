@@ -53,7 +53,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.2.1 - Net Income Fix - ${new Date().toISOString()}
+        v4.3 - Comprehensive Net Income - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -220,12 +220,13 @@ app.get('/listings', async (req, res) => {
             }
         }
 
-        // Fetch buy box winner status and sale fees
+        // Fetch buy box winner status, sale fees, and shipping costs
         const buyBoxData = new Map();
-        const feeData = new Map();
+        const feeData = new Map(); // Stores { saleFee, financingFee }
+        const shippingData = new Map();
         const feeCache = new Map(); // Cache fees by price+type+category
 
-        // Process items to get buy box status and fees
+        // Process items to get buy box status, fees, and shipping
         for (const itemWrapper of allItems) {
             if (itemWrapper.code === 200) {
                 const item = itemWrapper.body;
@@ -252,7 +253,7 @@ app.get('/listings', async (req, res) => {
                     }
                 }
 
-                // 2. Fetch Listing Fees (with caching)
+                // 2. Fetch Listing Fees (Sale Fee + Financing Fee)
                 const cacheKey = `${item.price}-${item.listing_type_id}-${item.category_id}`;
                 if (feeCache.has(cacheKey)) {
                     feeData.set(itemId, feeCache.get(cacheKey));
@@ -272,7 +273,6 @@ app.get('/listings', async (req, res) => {
 
                         if (feeResponse.data && feeResponse.data.length > 0) {
                             const fees = Array.isArray(feeResponse.data) ? feeResponse.data : [feeResponse.data];
-                            // Match listing type, handling common aliases (gold_special -> classic, gold_pro -> premium)
                             const feeInfo = fees.find(f =>
                                 f.listing_type_id === item.listing_type_id ||
                                 (item.listing_type_id === 'gold_special' && f.listing_type_id === 'classic') ||
@@ -280,12 +280,42 @@ app.get('/listings', async (req, res) => {
                             );
 
                             if (feeInfo) {
-                                feeData.set(itemId, feeInfo.sale_fee_amount);
-                                feeCache.set(cacheKey, feeInfo.sale_fee_amount);
+                                // Extract financing fee if detail is available
+                                let financingFee = 0;
+                                if (feeInfo.sale_fee_details) {
+                                    const financingDetail = feeInfo.sale_fee_details.find(d => d.financing_add_on_fee);
+                                    if (financingDetail) {
+                                        financingFee = financingDetail.financing_add_on_fee;
+                                    }
+                                }
+
+                                const totalFees = {
+                                    saleFee: feeInfo.sale_fee_amount,
+                                    financingFee: financingFee
+                                };
+                                feeData.set(itemId, totalFees);
+                                feeCache.set(cacheKey, totalFees);
                             }
                         }
                     } catch (error) {
                         console.error(`Error fetching fees for ${itemId}:`, error.message);
+                    }
+                }
+
+                // 3. Fetch Shipping Cost (if free shipping)
+                if (item.shipping && item.shipping.free_shipping) {
+                    try {
+                        const shippingResponse = await axios.get(
+                            `https://api.mercadolibre.com/items/${itemId}/shipping_options/cost`,
+                            {
+                                headers: { Authorization: `Bearer ${accessToken}` }
+                            }
+                        );
+                        if (shippingResponse.data && shippingResponse.data.shipping_fee) {
+                            shippingData.set(itemId, shippingResponse.data.shipping_fee);
+                        }
+                    } catch (error) {
+                        console.error(`Error fetching shipping cost for ${itemId}:`, error.message);
                     }
                 }
             }
@@ -327,8 +357,9 @@ app.get('/listings', async (req, res) => {
                 }
             }
 
-            const fee = feeData.get(item.id) || 0;
-            const netIncome = item.price - fee;
+            const fees = feeData.get(item.id) || { saleFee: 0, financingFee: 0 };
+            const shipFee = shippingData.get(item.id) || 0;
+            const netIncome = item.price - (fees.saleFee || 0) - (fees.financingFee || 0) - shipFee;
             const netIncomeFormatted = `$ ${netIncome.toLocaleString('es-AR')}`;
 
             return `
