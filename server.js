@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v6.2 - Item Brand Support - ${new Date().toISOString()}
+        v6.3 - Global Brand Search - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -451,11 +451,10 @@ app.get('/listings', async (req, res) => {
                             
                             for (let i = 0; i < rows.length; i++) {
                                 const row = rows[i];
-                                const title = row.cells[1].textContent.toLowerCase();
-                                const id = row.cells[1].textContent.toLowerCase();
+                                const itemDetailsText = row.cells[1].textContent.toLowerCase(); // Contains title, ID, and brand
                                 const rowStatus = row.cells[6].textContent.toLowerCase().trim();
                                 
-                                const matchesSearch = title.includes(query) || id.includes(query);
+                                const matchesSearch = itemDetailsText.includes(query);
                                 const matchesStatus = status === 'all' || rowStatus === status;
                                 
                                 if (matchesSearch && matchesStatus) {
