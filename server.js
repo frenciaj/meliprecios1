@@ -52,7 +52,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v2.5 - Price to Win Column - ${new Date().toISOString()}
+        v2.6 - Clean Buy Box Display - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -252,7 +252,7 @@ app.get('/listings', async (req, res) => {
             const item = itemWrapper.body;
 
             // Determine buy box status and price to win
-            let buyBoxStatus = 'N/A';
+            let buyBoxStatus = '';  // Default to empty instead of 'N/A'
             let buyBoxClass = 'status-na';
             let priceToWin = '-';
 
@@ -272,10 +272,8 @@ app.get('/listings', async (req, res) => {
                     } else if (competitionStatus === 'listed') {
                         buyBoxStatus = 'Listed';
                         buyBoxClass = 'status-na';
-                    } else {
-                        buyBoxStatus = 'Unknown';
-                        buyBoxClass = 'status-na';
                     }
+                    // Unknown or undefined status = leave blank (empty string)
 
                     // Format price to win
                     if (data.priceToWin !== null && data.priceToWin !== undefined) {
