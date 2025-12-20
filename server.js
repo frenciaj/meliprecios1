@@ -53,7 +53,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.0 - Qty Editing & Inactive Listings - ${new Date().toISOString()}
+        v4.1 - Status Filtering - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -334,13 +334,20 @@ app.get('/listings', async (req, res) => {
                 </div>
                 
                 ${allItems.length > 0 ? `
-                    <div style="margin-bottom: 20px;">
+                    <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center;">
                         <input 
                             type="text" 
                             id="search-input" 
                             placeholder="Search by title or ID..." 
-                            style="width: 100%; padding: 12px; font-size: 14px; border: 1px solid #ddd; border-radius: 4px; font-family: 'Roboto', sans-serif;"
+                            style="flex-grow: 1; padding: 12px; font-size: 14px; border: 1px solid #ddd; border-radius: 4px; font-family: 'Roboto', sans-serif;"
                         />
+                        <select id="status-filter" style="padding: 12px; font-size: 14px; border: 1px solid #ddd; border-radius: 4px; font-family: 'Roboto', sans-serif; background-color: white; cursor: pointer;">
+                            <option value="all">All Statuses</option>
+                            <option value="active">Active</option>
+                            <option value="paused">Paused</option>
+                            <option value="closed">Closed</option>
+                            <option value="under_review">Under Review</option>
+                        </select>
                     </div>
                     
                     <table id="listings-table">
@@ -361,20 +368,26 @@ app.get('/listings', async (req, res) => {
                     
                     <script>
                         const searchInput = document.getElementById('search-input');
+                        const statusFilter = document.getElementById('status-filter');
                         const table = document.getElementById('listings-table');
                         const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
                         const itemCount = document.getElementById('item-count');
                         
-                        searchInput.addEventListener('input', function() {
-                            const query = this.value.toLowerCase();
+                        function applyFilters() {
+                            const query = searchInput.value.toLowerCase();
+                            const status = statusFilter.value.toLowerCase();
                             let visibleCount = 0;
                             
                             for (let i = 0; i < rows.length; i++) {
                                 const row = rows[i];
                                 const title = row.cells[1].textContent.toLowerCase();
                                 const id = row.cells[1].textContent.toLowerCase();
+                                const rowStatus = row.cells[5].textContent.toLowerCase().trim();
                                 
-                                if (title.includes(query) || id.includes(query)) {
+                                const matchesSearch = title.includes(query) || id.includes(query);
+                                const matchesStatus = status === 'all' || rowStatus === status;
+                                
+                                if (matchesSearch && matchesStatus) {
                                     row.style.display = '';
                                     visibleCount++;
                                 } else {
@@ -383,7 +396,11 @@ app.get('/listings', async (req, res) => {
                             }
                             
                             itemCount.textContent = visibleCount;
-                        });
+                        }
+                        
+                        searchInput.addEventListener('input', applyFilters);
+                        statusFilter.addEventListener('change', applyFilters);
+
                         
                         // Price editing functions
                         window.editPrice = function(itemId, currentPrice) {
