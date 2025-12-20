@@ -219,9 +219,49 @@ app.get('/listings', async (req, res) => {
             }
         }
 
+        // Fetch buy box winner status for catalog items
+        const catalogProductIds = new Set();
+        const buyBoxWinners = new Map();
+
+        allItems.forEach(itemWrapper => {
+            if (itemWrapper.code === 200 && itemWrapper.body.catalog_product_id) {
+                catalogProductIds.add(itemWrapper.body.catalog_product_id);
+            }
+        });
+
+        // Fetch buy box winner for each unique catalog product
+        for (const catalogProductId of catalogProductIds) {
+            try {
+                const productResponse = await axios.get(`https://api.mercadolibre.com/products/${catalogProductId}`);
+                if (productResponse.data.buy_box_winner) {
+                    buyBoxWinners.set(catalogProductId, productResponse.data.buy_box_winner.item_id);
+                }
+            } catch (error) {
+                console.error(`Error fetching product ${catalogProductId}:`, error.message);
+            }
+        }
+
         const tableRows = allItems.map(itemWrapper => {
             if (itemWrapper.code !== 200) return '';
             const item = itemWrapper.body;
+
+            // Determine buy box status
+            let buyBoxStatus = 'N/A';
+            let buyBoxClass = 'status-na';
+            if (item.catalog_product_id) {
+                const winnerId = buyBoxWinners.get(item.catalog_product_id);
+                if (winnerId === item.id) {
+                    buyBoxStatus = '🏆 Winning';
+                    buyBoxClass = 'status-winning';
+                } else if (winnerId) {
+                    buyBoxStatus = 'Not Winning';
+                    buyBoxClass = 'status-losing';
+                } else {
+                    buyBoxStatus = 'Unknown';
+                    buyBoxClass = 'status-na';
+                }
+            }
+
             return `
                 <tr>
                     <td>
@@ -236,6 +276,7 @@ app.get('/listings', async (req, res) => {
                     </td>
                     <td>${item.available_quantity}</td>
                     <td><span class="status-badge status-${item.status}">${item.status}</span></td>
+                    <td><span class="status-badge ${buyBoxClass}">${buyBoxStatus}</span></td>
                     <td><a href="${item.permalink}" target="_blank" class="link-btn">View @ Meli</a></td>
                 </tr>
             `;
@@ -266,6 +307,7 @@ app.get('/listings', async (req, res) => {
                                 <th>Price</th>
                                 <th>Qty</th>
                                 <th>Status</th>
+                                <th>Buy Box</th>
                                 <th>Action</th>
                             </tr>
                         </thead>
