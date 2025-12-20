@@ -8,6 +8,18 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Global Cache for Fees (persists between requests to minimize API calls)
+const GLOBAL_FEE_CACHE = new Map();
+const GLOBAL_SHIPPING_CACHE = new Map();
+
+// Listing Type Mappings (normalized for API requests)
+const LISTING_TYPE_ALIASES = {
+    'gold_special': 'classic',
+    'gold_pro': 'premium',
+    'classic': 'classic',
+    'premium': 'premium'
+};
+
 // Trust proxy for Vercel
 app.set('trust proxy', 1);
 
@@ -53,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.4.1 - Fix: item undefined - ${new Date().toISOString()}
+        v4.5 - Deep Fee Fix & Performance - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -220,113 +232,85 @@ app.get('/listings', async (req, res) => {
             }
         }
 
-        // Fetch buy box winner status, sale fees, and shipping costs
+        // Fetch Buy Box, Fees, and Shipping in Parallel
         const buyBoxData = new Map();
-        const feeData = new Map(); // Stores { saleFee, financingFee }
+        const feeData = new Map();
         const shippingData = new Map();
-        const feeCache = new Map(); // Cache fees by price+type+category
 
-        // Process items to get buy box status, fees, and shipping
-        for (const itemWrapper of allItems) {
-            if (itemWrapper.code === 200) {
-                const item = itemWrapper.body;
-                const itemId = item.id;
+        await Promise.all(allItems.map(async (itemWrapper) => {
+            if (itemWrapper.code !== 200) return;
+            const item = itemWrapper.body;
+            const itemId = item.id;
 
-                // 1. Fetch Buy Box Status (only for catalog items)
-                if (item.catalog_product_id) {
-                    try {
-                        const priceToWinResponse = await axios.get(
-                            `https://api.mercadolibre.com/items/${itemId}/price_to_win`,
-                            {
-                                headers: { Authorization: `Bearer ${accessToken}` },
-                                params: { siteId: 'MLA', version: 'v2' }
-                            }
-                        );
-
-                        buyBoxData.set(itemId, {
-                            status: priceToWinResponse.data.status,
-                            priceToWin: priceToWinResponse.data.price_to_win
-                        });
-                    } catch (error) {
-                        console.error(`Error fetching price_to_win for ${itemId}:`, error.message);
-                        buyBoxData.set(itemId, { status: 'error', priceToWin: null });
-                    }
+            // 1. Fetch Buy Box Status
+            if (item.catalog_product_id) {
+                try {
+                    const pbRes = await axios.get(`https://api.mercadolibre.com/items/${itemId}/price_to_win`, {
+                        headers: { Authorization: `Bearer ${accessToken}` },
+                        params: { siteId: 'MLA', version: 'v2' }
+                    });
+                    buyBoxData.set(itemId, { status: pbRes.data.status, priceToWin: pbRes.data.price_to_win });
+                } catch (err) {
+                    console.error(`BuyBox Error (${itemId}):`, err.message);
                 }
+            }
 
-                // 2. Fetch Listing Fees (Sale Fee + Financing Fee)
-                const cacheKey = `${item.price}-${item.listing_type_id}-${item.category_id}`;
-                if (feeCache.has(cacheKey)) {
-                    feeData.set(itemId, feeCache.get(cacheKey));
+            // 2. Fetch Fees (with Global Caching)
+            const normalizedType = LISTING_TYPE_ALIASES[item.listing_type_id] || item.listing_type_id;
+            const cacheKey = `${item.price}-${normalizedType}-${item.category_id}`;
+
+            if (GLOBAL_FEE_CACHE.has(cacheKey)) {
+                feeData.set(itemId, GLOBAL_FEE_CACHE.get(cacheKey));
+            } else {
+                try {
+                    const fRes = await axios.get(`https://api.mercadolibre.com/sites/MLA/listing_prices`, {
+                        headers: { Authorization: `Bearer ${accessToken}` },
+                        params: {
+                            price: item.price,
+                            category_id: item.category_id,
+                            listing_type_id: normalizedType,
+                            quantity: 1
+                        }
+                    });
+
+                    const fees = Array.isArray(fRes.data) ? fRes.data : [fRes.data];
+                    const feeInfo = fees[0];
+
+                    if (feeInfo) {
+                        let finFee = 0;
+                        if (feeInfo.sale_fee_details) {
+                            const detail = feeInfo.sale_fee_details.find(d => d.financing_add_on_fee);
+                            if (detail) finFee = detail.financing_add_on_fee;
+                        }
+                        const result = { saleFee: feeInfo.sale_fee_amount || 0, financingFee: finFee };
+                        feeData.set(itemId, result);
+                        GLOBAL_FEE_CACHE.set(cacheKey, result);
+                    } else {
+                        console.warn(`No fee data for ${itemId} (Type: ${normalizedType})`);
+                    }
+                } catch (err) {
+                    console.error(`Fee Error (${itemId}):`, err.message);
+                }
+            }
+
+            // 3. Fetch Shipping Cost
+            if (item.shipping && item.shipping.free_shipping) {
+                if (GLOBAL_SHIPPING_CACHE.has(itemId)) {
+                    shippingData.set(itemId, GLOBAL_SHIPPING_CACHE.get(itemId));
                 } else {
                     try {
-                        const feeResponse = await axios.get(
-                            `https://api.mercadolibre.com/sites/MLA/listing_prices`,
-                            {
-                                headers: { Authorization: `Bearer ${accessToken}` },
-                                params: {
-                                    price: item.price,
-                                    category_id: item.category_id,
-                                    quantity: 1
-                                }
-                            }
-                        );
-
-                        const fees = Array.isArray(feeResponse.data) ? feeResponse.data : [feeResponse.data];
-                        // Match listing type, handling common aliases
-                        let feeInfo = fees.find(f =>
-                            f.listing_type_id === item.listing_type_id ||
-                            (item.listing_type_id === 'gold_special' && f.listing_type_id === 'classic') ||
-                            (item.listing_type_id === 'gold_pro' && f.listing_type_id === 'premium') ||
-                            (item.listing_type_id === 'classic' && f.listing_type_id === 'gold_special') ||
-                            (item.listing_type_id === 'premium' && f.listing_type_id === 'gold_pro')
-                        );
-
-                        // Fallback to first one if still not found
-                        if (!feeInfo && fees.length > 0) {
-                            console.log(`No exact fee match for ${item.listing_type_id}, using first available (${fees[0].listing_type_id})`);
-                            feeInfo = fees[0];
-                        }
-
-                        if (feeInfo) {
-                            // Extract financing fee if detail is available
-                            let financingFee = 0;
-                            if (feeInfo.sale_fee_details) {
-                                const financingDetail = feeInfo.sale_fee_details.find(d => d.financing_add_on_fee);
-                                if (financingDetail) {
-                                    financingFee = financingDetail.financing_add_on_fee;
-                                }
-                            }
-
-                            const totalFees = {
-                                saleFee: feeInfo.sale_fee_amount,
-                                financingFee: financingFee
-                            };
-                            feeData.set(itemId, totalFees);
-                            feeCache.set(cacheKey, totalFees);
-                        }
-                    } catch (error) {
-                        console.error(`Error fetching fees for ${itemId}:`, error.message);
-                    }
-                }
-
-                // 3. Fetch Shipping Cost (if free shipping)
-                if (item.shipping && item.shipping.free_shipping) {
-                    try {
-                        const shippingResponse = await axios.get(
-                            `https://api.mercadolibre.com/items/${itemId}/shipping_options/cost`,
-                            {
-                                headers: { Authorization: `Bearer ${accessToken}` }
-                            }
-                        );
-                        if (shippingResponse.data && shippingResponse.data.shipping_fee) {
-                            shippingData.set(itemId, shippingResponse.data.shipping_fee);
-                        }
-                    } catch (error) {
-                        console.error(`Error fetching shipping cost for ${itemId}:`, error.message);
+                        const sRes = await axios.get(`https://api.mercadolibre.com/items/${itemId}/shipping_options/cost`, {
+                            headers: { Authorization: `Bearer ${accessToken}` }
+                        });
+                        const cost = sRes.data?.shipping_fee || 0;
+                        shippingData.set(itemId, cost);
+                        GLOBAL_SHIPPING_CACHE.set(itemId, cost);
+                    } catch (err) {
+                        console.error(`Shipping Error (${itemId}):`, err.message);
                     }
                 }
             }
-        }
+        }));
 
 
         const tableRows = allItems.map(itemWrapper => {
