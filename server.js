@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.7 - Forced Costs Visibility - ${new Date().toISOString()}
+        v5.0 - Suggestions API Integration - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -333,6 +333,25 @@ app.get('/listings', async (req, res) => {
                         console.error(`Shipping Error (${itemId}):`, err.message);
                     }
                 }
+            }
+
+            // 4. Fetch Suggestions for Precise Costs (v5.0)
+            try {
+                const sugRes = await axios.get(`https://api.mercadolibre.com/suggestions/items/${itemId}/details`, {
+                    headers: { Authorization: `Bearer ${accessToken}` }
+                });
+                if (sugRes.data && sugRes.data.costs) {
+                    const costs = sugRes.data.costs;
+                    if (costs.sale_fee !== undefined) {
+                        const current = feeData.get(itemId) || { saleFee: 0, financingFee: 0 };
+                        feeData.set(itemId, { ...current, saleFee: costs.sale_fee, isSug: true });
+                    }
+                    if (costs.shipping_cost !== undefined) {
+                        shippingData.set(itemId, costs.shipping_cost);
+                    }
+                }
+            } catch (err) {
+                // Ignore errors, use previous data
             }
         }));
 
