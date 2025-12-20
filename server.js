@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v6.1 - UI Polish - ${new Date().toISOString()}
+        v6.2 - Item Brand Support - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -336,7 +336,9 @@ app.get('/listings', async (req, res) => {
                     </td>
                     <td>
                         <div style="font-weight: 500;">${item.title}</div>
-                        <div style="font-size: 0.8rem; color: #999;">ID: ${item.id}</div>
+                        <div style="font-size: 0.8rem; color: #999;">
+                            ID: ${item.id} | Marca: ${item.attributes && item.attributes.find(a => a.id === 'BRAND') ? item.attributes.find(a => a.id === 'BRAND').value_name : 'N/A'}
+                        </div>
                     </td>
                     <td>
                         <div class="price-edit-container" data-item-id="${item.id}">
