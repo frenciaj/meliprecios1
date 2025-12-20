@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.5.2 - Super Robust Fee Engine - ${new Date().toISOString()}
+        v4.5.4 - Granular Fees & Shipping - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -145,7 +145,7 @@ app.get('/callback', async (req, res) => {
                     Keys: ${cookiesReceived.join(', ') || 'NONE'}<br>
                     PKCE State: ${cookieState || 'UNDEFINED'}<br>
                     PKCE Verifier: ${codeVerifier ? 'PRESENT' : 'UNDEFINED'}<br><br>
-
+149: 
                     <strong>Validation Logic:</strong><br>
                     State Match: ${(state === cookieState).toString().toUpperCase()}<br>
                     Verifier OK: ${(!!codeVerifier).toString().toUpperCase()}<br>
@@ -263,7 +263,6 @@ app.get('/listings', async (req, res) => {
                 feeData.set(itemId, GLOBAL_FEE_CACHE.get(cacheKey));
             } else {
                 try {
-                    // console.log(`[Fee Debug] Req ${itemId}: P=${item.price}, C=${item.category_id}`);
                     const fRes = await axios.get(`https://api.mercadolibre.com/sites/MLA/listing_prices`, {
                         headers: { Authorization: `Bearer ${accessToken}` },
                         params: {
@@ -274,56 +273,66 @@ app.get('/listings', async (req, res) => {
                     });
 
                     const fees = Array.isArray(fRes.data) ? fRes.data : [fRes.data];
-
-                    // Match the item's listing_type_id against the possibilities
                     let feeInfo = fees.find(f =>
                         f.listing_type_id === item.listing_type_id ||
-                        LISTING_TYPE_ALIASES[item.listing_type_id] === f.listing_type_id ||
-                        LISTING_TYPE_ALIASES[f.listing_type_id] === item.listing_type_id
-                    );
-
-                    // Fallback to first available if no exact match (Meli API can be inconsistent)
-                    if (!feeInfo && fees.length > 0) {
-                        feeInfo = fees[0];
-                    }
+                        LISTING_TYPE_ALIASES[item.listing_type_id] === f.listing_type_id
+                    ) || fees[0];
 
                     if (feeInfo) {
                         let finFee = 0;
+                        let sFee = 0;
                         if (feeInfo.sale_fee_details) {
-                            const detail = feeInfo.sale_fee_details.find(d => d.financing_add_on_fee);
-                            if (detail) finFee = detail.financing_add_on_fee;
+                            feeInfo.sale_fee_details.forEach(d => {
+                                if (d.financing_add_on_fee) {
+                                    finFee += d.financing_add_on_fee;
+                                } else {
+                                    sFee += (d.fixed_fee || d.meli_percentage_fee || 0);
+                                }
+                            });
+                        } else {
+                            sFee = feeInfo.sale_fee_amount || 0;
                         }
-                        const result = { saleFee: feeInfo.sale_fee_amount || 0, financingFee: finFee };
+                        const result = { saleFee: sFee, financingFee: finFee };
                         feeData.set(itemId, result);
                         GLOBAL_FEE_CACHE.set(cacheKey, result);
                     } else {
-                        // HARD FALLBACK: If API fails or returns no fees, use estimates (ARS typicals)
-                        let estimatedPercent = 0.13; // Default approx 13% for classic
-                        if (item.listing_type_id === 'gold_pro' || item.listing_type_id === 'premium') estimatedPercent = 0.27; // approx 27%
-
-                        const estFee = item.price * estimatedPercent;
-                        const result = { saleFee: estFee, financingFee: 0, isEstimate: true };
-                        feeData.set(itemId, result);
-                        console.warn(`[Fee Warning] Using estimate for ${itemId} (${item.listing_type_id})`);
+                        // Hard fallback if API fails
+                        const isPremium = (item.listing_type_id === 'gold_pro' || item.listing_type_id === 'premium');
+                        feeData.set(itemId, {
+                            saleFee: item.price * 0.145,
+                            financingFee: isPremium ? item.price * 0.04 : 0,
+                            isEstimate: true
+                        });
                     }
                 } catch (err) {
                     console.error(`Fee Error (${itemId}):`, err.message);
-                    // Catch-all fallback
-                    const estFee = item.price * 0.15;
-                    feeData.set(itemId, { saleFee: estFee, financingFee: 0, isEstimate: true });
+                    feeData.set(itemId, { saleFee: item.price * 0.15, financingFee: 0, isEstimate: true });
                 }
             }
 
-            // 3. Fetch Shipping Cost
+            // 3. Fetch Shipping Cost (Improved for Sellers)
             if (item.shipping && item.shipping.free_shipping) {
                 if (GLOBAL_SHIPPING_CACHE.has(itemId)) {
                     shippingData.set(itemId, GLOBAL_SHIPPING_CACHE.get(itemId));
                 } else {
                     try {
-                        const sRes = await axios.get(`https://api.mercadolibre.com/items/${itemId}/shipping_options/cost`, {
+                        const sRes = await axios.get(`https://api.mercadolibre.com/items/${itemId}/shipping_options?zip_code=1001`, {
                             headers: { Authorization: `Bearer ${accessToken}` }
                         });
-                        const cost = sRes.data?.shipping_fee || 0;
+
+                        let cost = 0;
+                        if (sRes.data && sRes.data.options) {
+                            const freeOption = sRes.data.options.find(o => o.display === 'always_free' || o.cost === 0) || sRes.data.options[0];
+                            cost = freeOption.list_cost || freeOption.cost || 0;
+                        }
+
+                        if (cost === 0) {
+                            const fallbackRes = await axios.get(`https://api.mercadolibre.com/items/${itemId}/shipping_options/cost`, {
+                                headers: { Authorization: `Bearer ${accessToken}` }
+                            });
+                            cost = fallbackRes.data?.shipping_fee || 0;
+                        }
+
                         shippingData.set(itemId, cost);
                         GLOBAL_SHIPPING_CACHE.set(itemId, cost);
                     } catch (err) {
@@ -339,7 +348,7 @@ app.get('/listings', async (req, res) => {
             const item = itemWrapper.body;
 
             // Determine buy box status and price to win
-            let buyBoxStatus = '';  // Default to empty instead of 'N/A'
+            let buyBoxStatus = '';
             let buyBoxClass = 'status-na';
             let priceToWin = '-';
 
@@ -360,9 +369,7 @@ app.get('/listings', async (req, res) => {
                         buyBoxStatus = 'Listed';
                         buyBoxClass = 'status-na';
                     }
-                    // Unknown or undefined status = leave blank (empty string)
 
-                    // Format price to win
                     if (data.priceToWin !== null && data.priceToWin !== undefined) {
                         priceToWin = `$ ${data.priceToWin.toLocaleString('es-AR')}`;
                     }
@@ -375,7 +382,7 @@ app.get('/listings', async (req, res) => {
             const netIncome = item.price - totalDeductions;
 
             const netIncomeFormatted = `$ ${netIncome.toLocaleString('es-AR')}`;
-            const saleFeeFormatted = `$ ${fees.saleFee.toLocaleString('es-AR')}`;
+            const saleFeeFormatted = `$ ${fees.saleFee.toLocaleString('es-AR')}${fees.isEstimate ? ' (Est.)' : ''}`;
             const financingFeeFormatted = `$ ${fees.financingFee.toLocaleString('es-AR')}`;
             const shipFeeFormatted = `$ ${shipFee.toLocaleString('es-AR')}`;
 
@@ -553,7 +560,6 @@ app.get('/listings', async (req, res) => {
                                 return;
                             }
                             
-                            // Show loading state
                             const saveBtn = container.querySelector('.save-price-btn');
                             const originalText = saveBtn.textContent;
                             saveBtn.textContent = '⏳';
@@ -569,7 +575,6 @@ app.get('/listings', async (req, res) => {
                                 const result = await response.json();
                                 
                                 if (result.success) {
-                                    // Update displayed price
                                     container.querySelector('.price-value').textContent = '$ ' + newPrice.toLocaleString('es-AR');
                                     container.querySelector('.price-display').style.display = 'flex';
                                     container.querySelector('.price-edit-form').style.display = 'none';
@@ -646,7 +651,6 @@ app.get('/listings', async (req, res) => {
                             const tbody = table.getElementsByTagName('tbody')[0];
                             const rows = Array.from(tbody.getElementsByTagName('tr'));
                             
-                            // Toggle direction if clicking same column
                             if (currentSortColumn === columnIndex) {
                                 currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
                             } else {
@@ -654,44 +658,29 @@ app.get('/listings', async (req, res) => {
                                 currentSortColumn = columnIndex;
                             }
                             
-                            // Clear all sort icons
                             for (let i = 1; i <= 7; i++) {
                                 const icon = document.getElementById('sort-icon-' + i);
                                 if (icon) icon.textContent = '';
                             }
                             
-                            // Set current sort icon
                             const currentIcon = document.getElementById('sort-icon-' + columnIndex);
                             if (currentIcon) {
                                 currentIcon.textContent = currentSortDirection === 'asc' ? ' ▲' : ' ▼';
                             }
                             
-                            // Sort rows
                             rows.sort(function(a, b) {
                                 let aValue = a.cells[columnIndex].textContent.trim();
                                 let bValue = b.cells[columnIndex].textContent.trim();
                                 
                                 if (dataType === 'number') {
-                                    // Extract numbers from formatted strings like "$ 58,000"
                                     aValue = parseFloat(aValue.replace(/[^0-9.-]/g, '')) || 0;
                                     bValue = parseFloat(bValue.replace(/[^0-9.-]/g, '')) || 0;
-                                    
-                                    if (currentSortDirection === 'asc') {
-                                        return aValue - bValue;
-                                    } else {
-                                        return bValue - aValue;
-                                    }
+                                    return currentSortDirection === 'asc' ? aValue - bValue : bValue - aValue;
                                 } else {
-                                    // Text sorting
-                                    if (currentSortDirection === 'asc') {
-                                        return aValue.localeCompare(bValue);
-                                    } else {
-                                        return bValue.localeCompare(aValue);
-                                    }
+                                    return currentSortDirection === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
                                 }
                             });
                             
-                            // Reappend rows in sorted order
                             rows.forEach(function(row) {
                                 tbody.appendChild(row);
                             });
@@ -708,105 +697,49 @@ app.get('/listings', async (req, res) => {
 
     } catch (error) {
         console.error('Listings Error:', error.message);
-        res.send(renderPage('Error', `< p > Error fetching listings: ${error.message}</p > <a href="/logout">Logout</a>`));
+        res.send(renderPage('Error', `<p>Error fetching listings: ${error.message}</p><a href="/logout">Logout</a>`));
     }
 });
 
 // Update item price
 app.post('/update-price', async (req, res) => {
     const accessToken = req.cookies.access_token;
-
-    if (!accessToken) {
-        return res.status(401).json({ success: false, error: 'Not authenticated' });
-    }
-
+    if (!accessToken) return res.status(401).json({ success: false, error: 'Not authenticated' });
     const { itemId, newPrice } = req.body;
-
-    // Validation
-    if (!itemId || newPrice === undefined || newPrice === null) {
-        return res.status(400).json({ success: false, error: 'Missing itemId or newPrice' });
-    }
-
-    if (newPrice < 0) {
-        return res.status(400).json({ success: false, error: 'Price cannot be negative' });
-    }
-
+    if (!itemId || newPrice === undefined) return res.status(400).json({ success: false, error: 'Missing params' });
     try {
-        // Update price via Mercado Libre API
-        await axios.put(
-            `https://api.mercadolibre.com/items/${itemId}`,
-            { price: parseFloat(newPrice) },
-            {
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
-
-        return res.json({ success: true, message: 'Price updated successfully' });
+        await axios.put(`https://api.mercadolibre.com/items/${itemId}`, { price: parseFloat(newPrice) }, {
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+        });
+        return res.json({ success: true });
     } catch (error) {
-        console.error('Update price error:', error.message);
-        const errorMsg = error.response?.data?.message || error.message || 'Failed to update price';
-        return res.status(500).json({ success: false, error: errorMsg });
+        return res.status(500).json({ success: false, error: error.message });
     }
 });
-
 
 // Update item quantity
 app.post('/update-quantity', async (req, res) => {
     const accessToken = req.cookies.access_token;
-
-    if (!accessToken) {
-        return res.status(401).json({ success: false, error: 'Not authenticated' });
-    }
-
+    if (!accessToken) return res.status(401).json({ success: false, error: 'Not authenticated' });
     const { itemId, newQuantity } = req.body;
-
-    // Validation
-    if (!itemId || newQuantity === undefined || newQuantity === null) {
-        return res.status(400).json({ success: false, error: 'Missing itemId or newQuantity' });
-    }
-
-    if (newQuantity < 0) {
-        return res.status(400).json({ success: false, error: 'Quantity cannot be negative' });
-    }
-
+    if (!itemId || newQuantity === undefined) return res.status(400).json({ success: false, error: 'Missing params' });
     try {
-        // Update quantity via Mercado Libre API
-        await axios.put(
-            `https://api.mercadolibre.com/items/${itemId}`,
-            { available_quantity: parseInt(newQuantity) },
-            {
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
-
-        return res.json({ success: true, message: 'Quantity updated successfully' });
+        await axios.put(`https://api.mercadolibre.com/items/${itemId}`, { available_quantity: parseInt(newQuantity) }, {
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+        });
+        return res.json({ success: true });
     } catch (error) {
-        console.error('Update quantity error:', error.message);
-        const errorMsg = error.response?.data?.message || error.message || 'Failed to update quantity';
-        return res.status(500).json({ success: false, error: errorMsg });
+        return res.status(500).json({ success: false, error: error.message });
     }
 });
-
-
 
 app.get('/logout', (req, res) => {
     res.clearCookie('access_token');
     res.redirect('/');
 });
 
-
-// Export app for Vercel
 module.exports = app;
 
-// Only listen if run directly (not required for Vercel)
 if (require.main === module) {
-    app.listen(PORT, () => {
-        console.log(`Server running on http://localhost:${PORT}`);
-    });
+    app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
 }
