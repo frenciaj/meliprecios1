@@ -744,6 +744,39 @@ app.post('/update-quantity', async (req, res) => {
     }
 });
 
+app.get('/debug-suggestions/:id', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+    if (!accessToken) return res.status(401).send('No token found. Please login first.');
+    const itemId = req.params.id;
+    try {
+        const userRes = await axios.get('https://api.mercadolibre.com/users/me', {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const userId = userRes.data.id;
+
+        // This endpoint might be different depending on MLA or other sites, but we'll try what the user suggested
+        const sugUserItemsRes = await axios.get(`https://api.mercadolibre.com/suggestions/user/${userId}/items`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        }).catch(e => ({ data: { error: e.message } }));
+
+        const sugDetailsRes = await axios.get(`https://api.mercadolibre.com/suggestions/items/${itemId}/details`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        }).catch(e => ({ data: { error: e.message } }));
+
+        const result = {
+            userId,
+            itemId,
+            suggestions_user_items: sugUserItemsRes.data,
+            suggestions_item_details: sugDetailsRes.data
+        };
+
+        console.log(`[Debug API] Results for ${itemId}:`, JSON.stringify(result, null, 2));
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message, details: err.response?.data });
+    }
+});
+
 app.get('/logout', (req, res) => {
     res.clearCookie('access_token');
     res.redirect('/');
