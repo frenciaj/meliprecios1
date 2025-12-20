@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v8.8 - Sync Promo Prices - ${new Date().toISOString()}
+        v8.9 - Robust Pricing & Fees - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -306,14 +306,19 @@ app.get('/listings', async (req, res) => {
         }));
 
 
-        const tableRows = allItems.map(itemWrapper => {
+        const tableRows = allItems.map((itemWrapper, index) => {
             if (itemWrapper.code !== 200) return '';
             const item = itemWrapper.body;
 
             // Determine if there's an active promotion/discount
-            const hasPromo = item.original_price && item.original_price > item.price;
-            const currentPrice = item.price;
-            const originalPrice = item.original_price || item.price;
+            // Check original_price, base_price, or sale_price diffs
+            const currentPrice = Number(item.price) || 0;
+            const originalPrice = Number(item.original_price || item.base_price) || currentPrice;
+            const hasPromo = originalPrice > currentPrice;
+
+            if (index < 5) {
+                console.log(`[Item Debug] ID: ${item.id}, Price: ${currentPrice}, Orig: ${originalPrice}, HasPromo: ${hasPromo}`);
+            }
 
             // Determine buy box status and price to win
             let buyBoxStatus = '';
@@ -344,14 +349,17 @@ app.get('/listings', async (req, res) => {
                 }
             }
 
-            const fees = feeData.get(item.id) || { saleFee: 0, financingFee: 0 };
-            const shipFee = shippingData.get(item.id) || 0;
-            const totalDeductions = (fees.saleFee || 0) + (fees.financingFee || 0) + shipFee;
+            const fees = feeData.get(item.id) || { saleFee: 0, financingFee: 0, isEstimate: true };
+            const shipFee = Number(shippingData.get(item.id)) || 0;
+            const saleFee = Number(fees.saleFee) || 0;
+            const finFee = Number(fees.financingFee) || 0;
+
+            const totalDeductions = saleFee + finFee + shipFee;
             const netIncome = currentPrice - totalDeductions;
 
-            const netIncomeFormatted = `$ ${netIncome.toLocaleString('es-AR')}`;
-            const saleFeeFormatted = `$ ${fees.saleFee.toLocaleString('es-AR')}${fees.isEstimate ? ' (Est.)' : ''}`;
-            const shipFeeFormatted = `$ ${shipFee.toLocaleString('es-AR')}`;
+            const netIncomeFormatted = `$ ${isFinite(netIncome) ? netIncome.toLocaleString('es-AR') : '---'}`;
+            const saleFeeFormatted = `$ ${isFinite(saleFee) ? saleFee.toLocaleString('es-AR') : '0'}${fees.isEstimate ? ' (Est.)' : ''}`;
+            const shipFeeFormatted = `$ ${isFinite(shipFee) ? shipFee.toLocaleString('es-AR') : '0'}`;
 
             return `
                 <tr>
