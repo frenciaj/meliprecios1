@@ -53,7 +53,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.4 - Net Income Tooltip - ${new Date().toISOString()}
+        v4.4.1 - Fix: item undefined - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -308,22 +308,22 @@ app.get('/listings', async (req, res) => {
                         console.error(`Error fetching fees for ${itemId}:`, error.message);
                     }
                 }
-            }
 
-            // 3. Fetch Shipping Cost (if free shipping)
-            if (item.shipping && item.shipping.free_shipping) {
-                try {
-                    const shippingResponse = await axios.get(
-                        `https://api.mercadolibre.com/items/${itemId}/shipping_options/cost`,
-                        {
-                            headers: { Authorization: `Bearer ${accessToken}` }
+                // 3. Fetch Shipping Cost (if free shipping)
+                if (item.shipping && item.shipping.free_shipping) {
+                    try {
+                        const shippingResponse = await axios.get(
+                            `https://api.mercadolibre.com/items/${itemId}/shipping_options/cost`,
+                            {
+                                headers: { Authorization: `Bearer ${accessToken}` }
+                            }
+                        );
+                        if (shippingResponse.data && shippingResponse.data.shipping_fee) {
+                            shippingData.set(itemId, shippingResponse.data.shipping_fee);
                         }
-                    );
-                    if (shippingResponse.data && shippingResponse.data.shipping_fee) {
-                        shippingData.set(itemId, shippingResponse.data.shipping_fee);
+                    } catch (error) {
+                        console.error(`Error fetching shipping cost for ${itemId}:`, error.message);
                     }
-                } catch (error) {
-                    console.error(`Error fetching shipping cost for ${itemId}:`, error.message);
                 }
             }
         }
