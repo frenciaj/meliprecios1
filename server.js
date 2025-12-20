@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.6 - Hardcoded Fees - ${new Date().toISOString()}
+        v4.7 - Forced Costs Visibility - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -414,12 +414,10 @@ app.get('/listings', async (req, res) => {
                                 <span class="tooltip-label">Cargo por vender (15%):</span>
                                 <span class="tooltip-value minus">-${saleFeeFormatted}</span>
                             </div>
-                            ${fees.financingFee > 0 ? `
                             <div class="tooltip-row">
                                 <span class="tooltip-label">Costo por tarjetas:</span>
                                 <span class="tooltip-value minus">-${financingFeeFormatted}</span>
                             </div>
-                            ` : ''}
                             ${shipFee > 0 ? `
                             <div class="tooltip-row">
                                 <span class="tooltip-label">Costo de envío:</span>
