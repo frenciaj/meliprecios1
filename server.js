@@ -52,7 +52,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v2.3 - Buy Box Fix - ${new Date().toISOString()}
+        v2.4 - Buy Box Working - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -235,19 +235,13 @@ app.get('/listings', async (req, res) => {
                         }
                     );
 
-                    // Log the entire response to see structure
-                    console.log(`Full API response for ${itemId}:`, JSON.stringify(priceToWinResponse.data, null, 2));
-
-                    const competitionStatus = priceToWinResponse.data.competition_status;
+                    // The field is called "status", not "competition_status"
+                    const competitionStatus = priceToWinResponse.data.status;
                     buyBoxStatuses.set(itemId, competitionStatus);
-                    console.log(`Item ${itemId} competition status:`, competitionStatus);
                 } catch (error) {
                     console.error(`Error fetching price_to_win for ${itemId}:`, error.message);
                     buyBoxStatuses.set(itemId, 'error');
                 }
-
-                // Only fetch first item for debugging
-                break;
             }
         }
 
