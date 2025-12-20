@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v5.0 - Suggestions API Integration - ${new Date().toISOString()}
+        v5.1 - Suggestions Fallback - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -335,7 +335,7 @@ app.get('/listings', async (req, res) => {
                 }
             }
 
-            // 4. Fetch Suggestions for Precise Costs (v5.0)
+            // 4. Fetch Suggestions for Precise Costs (v5.1 - Try Suggestions First)
             try {
                 const sugRes = await axios.get(`https://api.mercadolibre.com/suggestions/items/${itemId}/details`, {
                     headers: { Authorization: `Bearer ${accessToken}` }
@@ -351,7 +351,8 @@ app.get('/listings', async (req, res) => {
                     }
                 }
             } catch (err) {
-                // Ignore errors, use previous data
+                // If Suggestions fail (like the 404 we saw), we keep the data from step 2 & 3
+                // console.log(`[Suggestions API] No suggestions for ${itemId} (404)`);
             }
         }));
 
