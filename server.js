@@ -361,19 +361,13 @@ app.get('/listings', async (req, res) => {
                                 <span class="tooltip-value">$ ${item.price.toLocaleString('es-AR')}</span>
                             </div>
                             <div class="tooltip-row">
-                                <span class="tooltip-label">Cargo por vender (15%):</span>
+                                <span class="tooltip-label">Cargo por vender:</span>
                                 <span class="tooltip-value minus">-${saleFeeFormatted}</span>
                             </div>
-                            <div class="tooltip-row">
-                                <span class="tooltip-label">Costo por tarjetas:</span>
-                                <span class="tooltip-value minus">-${financingFeeFormatted}</span>
-                            </div>
-                            ${shipFee > 0 ? `
                             <div class="tooltip-row">
                                 <span class="tooltip-label">Costo de envío:</span>
                                 <span class="tooltip-value minus">-${shipFeeFormatted}</span>
                             </div>
-                            ` : ''}
                             <div class="tooltip-row total">
                                 <span class="tooltip-label">Recibís:</span>
                                 <span class="tooltip-value">${netIncomeFormatted}</span>
