@@ -53,7 +53,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v3.0 - Inline Price Editing - ${new Date().toISOString()}
+        v3.1 - Column Sorting - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -335,12 +335,12 @@ app.get('/listings', async (req, res) => {
                         <thead>
                             <tr>
                                 <th>Image</th>
-                                <th>Title</th>
-                                <th>Price</th>
-                                <th>Price to Win</th>
-                                <th>Qty</th>
-                                <th>Status</th>
-                                <th>Buy Box</th>
+                                <th onclick="sortTable(1, 'text')" style="cursor: pointer;" data-column="1">Title <span id="sort-icon-1"></span></th>
+                                <th onclick="sortTable(2, 'number')" style="cursor: pointer;" data-column="2">Price <span id="sort-icon-2"></span></th>
+                                <th onclick="sortTable(3, 'number')" style="cursor: pointer;" data-column="3">Price to Win <span id="sort-icon-3"></span></th>
+                                <th onclick="sortTable(4, 'number')" style="cursor: pointer;" data-column="4">Qty <span id="sort-icon-4"></span></th>
+                                <th onclick="sortTable(5, 'text')" style="cursor: pointer;" data-column="5">Status <span id="sort-icon-5"></span></th>
+                                <th onclick="sortTable(6, 'text')" style="cursor: pointer;" data-column="6">Buy Box <span id="sort-icon-6"></span></th>
                                 <th>Action</th>
                             </tr>
                         </thead>
@@ -426,6 +426,66 @@ app.get('/listings', async (req, res) => {
                                 saveBtn.textContent = originalText;
                                 saveBtn.disabled = false;
                             }
+                        };
+                        
+                        // Table sorting functionality
+                        let currentSortColumn = null;
+                        let currentSortDirection = 'asc';
+                        
+                        window.sortTable = function(columnIndex, dataType) {
+                            const table = document.getElementById('listings-table');
+                            const tbody = table.getElementsByTagName('tbody')[0];
+                            const rows = Array.from(tbody.getElementsByTagName('tr'));
+                            
+                            // Toggle direction if clicking same column
+                            if (currentSortColumn === columnIndex) {
+                                currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+                            } else {
+                                currentSortDirection = 'asc';
+                                currentSortColumn = columnIndex;
+                            }
+                            
+                            // Clear all sort icons
+                            for (let i = 1; i <= 6; i++) {
+                                const icon = document.getElementById('sort-icon-' + i);
+                                if (icon) icon.textContent = '';
+                            }
+                            
+                            // Set current sort icon
+                            const currentIcon = document.getElementById('sort-icon-' + columnIndex);
+                            if (currentIcon) {
+                                currentIcon.textContent = currentSortDirection === 'asc' ? ' ▲' : ' ▼';
+                            }
+                            
+                            // Sort rows
+                            rows.sort(function(a, b) {
+                                let aValue = a.cells[columnIndex].textContent.trim();
+                                let bValue = b.cells[columnIndex].textContent.trim();
+                                
+                                if (dataType === 'number') {
+                                    // Extract numbers from formatted strings like "$ 58,000"
+                                    aValue = parseFloat(aValue.replace(/[^0-9.-]/g, '')) || 0;
+                                    bValue = parseFloat(bValue.replace(/[^0-9.-]/g, '')) || 0;
+                                    
+                                    if (currentSortDirection === 'asc') {
+                                        return aValue - bValue;
+                                    } else {
+                                        return bValue - aValue;
+                                    }
+                                } else {
+                                    // Text sorting
+                                    if (currentSortDirection === 'asc') {
+                                        return aValue.localeCompare(bValue);
+                                    } else {
+                                        return bValue.localeCompare(aValue);
+                                    }
+                                }
+                            });
+                            
+                            // Reappend rows in sorted order
+                            rows.forEach(function(row) {
+                                tbody.appendChild(row);
+                            });
                         };
                     </script>
                 ` : '<p>No active listings found.</p>'
