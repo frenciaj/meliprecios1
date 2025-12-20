@@ -219,25 +219,29 @@ app.get('/listings', async (req, res) => {
             }
         }
 
-        // Fetch buy box winner status for catalog items
-        const catalogProductIds = new Set();
-        const buyBoxWinners = new Map();
+        // Fetch buy box winner status using price_to_win endpoint
+        const buyBoxStatuses = new Map();
 
-        allItems.forEach(itemWrapper => {
+        // Process items to get buy box status
+        for (const itemWrapper of allItems) {
             if (itemWrapper.code === 200 && itemWrapper.body.catalog_product_id) {
-                catalogProductIds.add(itemWrapper.body.catalog_product_id);
-            }
-        });
+                const itemId = itemWrapper.body.id;
+                try {
+                    const priceToWinResponse = await axios.get(
+                        `https://api.mercadolibre.com/items/${itemId}/price_to_win`,
+                        {
+                            headers: { Authorization: `Bearer ${accessToken}` },
+                            params: { siteId: 'MLA', version: 'v2' }
+                        }
+                    );
 
-        // Fetch buy box winner for each unique catalog product
-        for (const catalogProductId of catalogProductIds) {
-            try {
-                const productResponse = await axios.get(`https://api.mercadolibre.com/products/${catalogProductId}`);
-                if (productResponse.data.buy_box_winner) {
-                    buyBoxWinners.set(catalogProductId, productResponse.data.buy_box_winner.item_id);
+                    const competitionStatus = priceToWinResponse.data.competition_status;
+                    buyBoxStatuses.set(itemId, competitionStatus);
+                    console.log(`Item ${itemId} competition status:`, competitionStatus);
+                } catch (error) {
+                    console.error(`Error fetching price_to_win for ${itemId}:`, error.message);
+                    buyBoxStatuses.set(itemId, 'error');
                 }
-            } catch (error) {
-                console.error(`Error fetching product ${catalogProductId}:`, error.message);
             }
         }
 
@@ -245,17 +249,23 @@ app.get('/listings', async (req, res) => {
             if (itemWrapper.code !== 200) return '';
             const item = itemWrapper.body;
 
-            // Determine buy box status
+            // Determine buy box status from competition_status
             let buyBoxStatus = 'N/A';
             let buyBoxClass = 'status-na';
             if (item.catalog_product_id) {
-                const winnerId = buyBoxWinners.get(item.catalog_product_id);
-                if (winnerId === item.id) {
+                const competitionStatus = buyBoxStatuses.get(item.id);
+                if (competitionStatus === 'winning') {
                     buyBoxStatus = '🏆 Winning';
                     buyBoxClass = 'status-winning';
-                } else if (winnerId) {
-                    buyBoxStatus = 'Not Winning';
+                } else if (competitionStatus === 'sharing_first_place') {
+                    buyBoxStatus = '🏆 Sharing 1st';
+                    buyBoxClass = 'status-winning';
+                } else if (competitionStatus === 'losing') {
+                    buyBoxStatus = 'Losing';
                     buyBoxClass = 'status-losing';
+                } else if (competitionStatus === 'listed') {
+                    buyBoxStatus = 'Listed';
+                    buyBoxClass = 'status-na';
                 } else {
                     buyBoxStatus = 'Unknown';
                     buyBoxClass = 'status-na';
