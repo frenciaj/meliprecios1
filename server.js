@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v8.7 - Rich Promotion Modal - ${new Date().toISOString()}
+        v8.8 - Sync Promo Prices - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
