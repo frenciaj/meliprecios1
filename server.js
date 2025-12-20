@@ -52,7 +52,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v2.4 - Buy Box Working - ${new Date().toISOString()}
+        v2.5 - Price to Win Column - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -220,7 +220,7 @@ app.get('/listings', async (req, res) => {
         }
 
         // Fetch buy box winner status using price_to_win endpoint
-        const buyBoxStatuses = new Map();
+        const buyBoxData = new Map();
 
         // Process items to get buy box status
         for (const itemWrapper of allItems) {
@@ -235,12 +235,14 @@ app.get('/listings', async (req, res) => {
                         }
                     );
 
-                    // The field is called "status", not "competition_status"
-                    const competitionStatus = priceToWinResponse.data.status;
-                    buyBoxStatuses.set(itemId, competitionStatus);
+                    // Store both status and price_to_win
+                    buyBoxData.set(itemId, {
+                        status: priceToWinResponse.data.status,
+                        priceToWin: priceToWinResponse.data.price_to_win
+                    });
                 } catch (error) {
                     console.error(`Error fetching price_to_win for ${itemId}:`, error.message);
-                    buyBoxStatuses.set(itemId, 'error');
+                    buyBoxData.set(itemId, { status: 'error', priceToWin: null });
                 }
             }
         }
@@ -249,26 +251,36 @@ app.get('/listings', async (req, res) => {
             if (itemWrapper.code !== 200) return '';
             const item = itemWrapper.body;
 
-            // Determine buy box status from competition_status
+            // Determine buy box status and price to win
             let buyBoxStatus = 'N/A';
             let buyBoxClass = 'status-na';
+            let priceToWin = '-';
+
             if (item.catalog_product_id) {
-                const competitionStatus = buyBoxStatuses.get(item.id);
-                if (competitionStatus === 'winning') {
-                    buyBoxStatus = '🏆 Winning';
-                    buyBoxClass = 'status-winning';
-                } else if (competitionStatus === 'sharing_first_place') {
-                    buyBoxStatus = '🏆 Sharing 1st';
-                    buyBoxClass = 'status-winning';
-                } else if (competitionStatus === 'losing') {
-                    buyBoxStatus = 'Losing';
-                    buyBoxClass = 'status-losing';
-                } else if (competitionStatus === 'listed') {
-                    buyBoxStatus = 'Listed';
-                    buyBoxClass = 'status-na';
-                } else {
-                    buyBoxStatus = 'Unknown';
-                    buyBoxClass = 'status-na';
+                const data = buyBoxData.get(item.id);
+                if (data) {
+                    const competitionStatus = data.status;
+                    if (competitionStatus === 'winning') {
+                        buyBoxStatus = '🏆 Winning';
+                        buyBoxClass = 'status-winning';
+                    } else if (competitionStatus === 'sharing_first_place') {
+                        buyBoxStatus = '🏆 Sharing 1st';
+                        buyBoxClass = 'status-winning';
+                    } else if (competitionStatus === 'losing') {
+                        buyBoxStatus = 'Losing';
+                        buyBoxClass = 'status-losing';
+                    } else if (competitionStatus === 'listed') {
+                        buyBoxStatus = 'Listed';
+                        buyBoxClass = 'status-na';
+                    } else {
+                        buyBoxStatus = 'Unknown';
+                        buyBoxClass = 'status-na';
+                    }
+
+                    // Format price to win
+                    if (data.priceToWin !== null && data.priceToWin !== undefined) {
+                        priceToWin = `$ ${data.priceToWin.toLocaleString('es-AR')}`;
+                    }
                 }
             }
 
@@ -284,6 +296,7 @@ app.get('/listings', async (req, res) => {
                     <td>
                         <div class="price">$ ${item.price.toLocaleString('es-AR')}</div>
                     </td>
+                    <td>${priceToWin}</td>
                     <td>${item.available_quantity}</td>
                     <td><span class="status-badge status-${item.status}">${item.status}</span></td>
                     <td><span class="status-badge ${buyBoxClass}">${buyBoxStatus}</span></td>
@@ -315,6 +328,7 @@ app.get('/listings', async (req, res) => {
                                 <th>Image</th>
                                 <th>Title</th>
                                 <th>Price</th>
+                                <th>Price to Win</th>
                                 <th>Qty</th>
                                 <th>Status</th>
                                 <th>Buy Box</th>
