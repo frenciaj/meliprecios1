@@ -25,6 +25,7 @@ app.get('/debug-config', (req, res) => {
 // Middleware
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(cookieParser());
+app.use(express.json()); // Parse JSON request bodies
 
 // Helpers
 const base64URLEncode = (str) => str.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -52,7 +53,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v2.6 - Clean Buy Box Display - ${new Date().toISOString()}
+        v3.0 - Inline Price Editing - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -292,7 +293,17 @@ app.get('/listings', async (req, res) => {
                         <div style="font-size: 0.8rem; color: #999;">ID: ${item.id}</div>
                     </td>
                     <td>
-                        <div class="price">$ ${item.price.toLocaleString('es-AR')}</div>
+                        <div class="price-edit-container" data-item-id="${item.id}">
+                            <div class="price-display">
+                                <span class="price-value">$ ${item.price.toLocaleString('es-AR')}</span>
+                                <button class="edit-price-btn" onclick="editPrice('${item.id}', ${item.price})">✏️</button>
+                            </div>
+                            <div class="price-edit-form" style="display: none;">
+                                <input type="number" class="price-input" value="${item.price}" step="0.01" min="0" />
+                                <button class="save-price-btn" onclick="savePrice('${item.id}')">✓</button>
+                                <button class="cancel-price-btn" onclick="cancelEdit('${item.id}')">✗</button>
+                            </div>
+                        </div>
                     </td>
                     <td>${priceToWin}</td>
                     <td>${item.available_quantity}</td>
@@ -361,21 +372,118 @@ app.get('/listings', async (req, res) => {
                             
                             itemCount.textContent = visibleCount;
                         });
+                        
+                        // Price editing functions
+                        window.editPrice = function(itemId, currentPrice) {
+                            const container = document.querySelector(`.price - edit - container[data - item - id= "${itemId}"]`);
+                            container.querySelector('.price-display').style.display = 'none';
+                            container.querySelector('.price-edit-form').style.display = 'flex';
+                            container.querySelector('.price-input').focus();
+                        };
+                        
+                        window.cancelEdit = function(itemId) {
+                            const container = document.querySelector(`.price - edit - container[data - item - id="${itemId}"]`);
+                            container.querySelector('.price-display').style.display = 'flex';
+                            container.querySelector('.price-edit-form').style.display = 'none';
+                        };
+                        
+                        window.savePrice = async function(itemId) {
+                            const container = document.querySelector(`.price - edit - container[data - item - id="${itemId}"]`);
+                            const input = container.querySelector('.price-input');
+                            const newPrice = parseFloat(input.value);
+                            
+                            if (isNaN(newPrice) || newPrice < 0) {
+                                alert('Please enter a valid price');
+                                return;
+                            }
+                            
+                            // Show loading state
+                            const saveBtn = container.querySelector('.save-price-btn');
+                            const originalText = saveBtn.textContent;
+                            saveBtn.textContent = '⏳';
+                            saveBtn.disabled = true;
+                            
+                            try {
+                                const response = await fetch('/update-price', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ itemId, newPrice })
+                                });
+                                
+                                const result = await response.json();
+                                
+                                if (result.success) {
+                                    // Update displayed price
+                                    container.querySelector('.price-value').textContent = '$ ' + newPrice.toLocaleString('es-AR');
+                                    container.querySelector('.price-display').style.display = 'flex';
+                                    container.querySelector('.price-edit-form').style.display = 'none';
+                                } else {
+                                    alert('Error: ' + result.error);
+                                }
+                            } catch (error) {
+                                alert('Failed to update price: ' + error.message);
+                            } finally {
+                                saveBtn.textContent = originalText;
+                                saveBtn.disabled = false;
+                            }
+                        };
                     </script>
-                ` : '<p>No active listings found.</p>'}
-            </div>
-            <div style="text-align: center; margin-top: 20px;">
-                <a href="/logout" style="color: #666; text-decoration: none;">Logout</a>
-            </div>
-        `;
+                ` : '<p>No active listings found.</p>'
+    }
+            </div >
+        <div style="text-align: center; margin-top: 20px;">
+            <a href="/logout" style="color: #666; text-decoration: none;">Logout</a>
+        </div>
+    `;
 
         res.send(renderPage('My Listings', content));
 
     } catch (error) {
         console.error('Listings Error:', error.message);
-        res.send(renderPage('Error', `<p>Error fetching listings: ${error.message}</p><a href="/logout">Logout</a>`));
+        res.send(renderPage('Error', `< p > Error fetching listings: ${ error.message }</p > <a href="/logout">Logout</a>`));
     }
 });
+
+// Update item price
+app.post('/update-price', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+
+    if (!accessToken) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+    }
+
+    const { itemId, newPrice } = req.body;
+
+    // Validation
+    if (!itemId || newPrice === undefined || newPrice === null) {
+        return res.status(400).json({ success: false, error: 'Missing itemId or newPrice' });
+    }
+
+    if (newPrice < 0) {
+        return res.status(400).json({ success: false, error: 'Price cannot be negative' });
+    }
+
+    try {
+        // Update price via Mercado Libre API
+        await axios.put(
+            `https://api.mercadolibre.com/items/${itemId}`,
+    { price: parseFloat(newPrice) },
+    {
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+        }
+    }
+        );
+
+return res.json({ success: true, message: 'Price updated successfully' });
+    } catch (error) {
+    console.error('Update price error:', error.message);
+    const errorMsg = error.response?.data?.message || error.message || 'Failed to update price';
+    return res.status(500).json({ success: false, error: errorMsg });
+}
+});
+
 
 app.get('/logout', (req, res) => {
     res.clearCookie('access_token');
