@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v5.2 - Stability & Cleanup - ${new Date().toISOString()}
+        v5.3 - Auth Optimization - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -93,6 +93,11 @@ app.get('/', (req, res) => {
 });
 
 app.get('/auth', (req, res) => {
+    // If already has token, just go to listings
+    if (req.cookies.access_token) {
+        return res.redirect('/listings');
+    }
+
     const verifier = base64URLEncode(crypto.randomBytes(32));
     const challenge = base64URLEncode(sha256(verifier));
     const state = base64URLEncode(crypto.randomBytes(16));
