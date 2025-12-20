@@ -52,7 +52,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v2.1 - DEEP DEBUG MODE - ${new Date().toISOString()}
+        v2.2 - CONFIG CHECK - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -71,6 +71,9 @@ app.get('/', (req, res) => {
                 <h2>Welcome to Mercado Libre Connector</h2>
                 <p style="color: #666; margin-bottom: 30px;">Connect your account to view and manage your listings.</p>
                 <a href="/auth" class="btn-primary">Connect with Mercado Libre</a>
+                <div style="margin-top: 20px; font-size: 0.8rem;">
+                    <a href="/debug-config" style="color: #999;">Diagnostic Config</a>
+                </div>
             </div>
         `));
     }
@@ -119,7 +122,7 @@ app.get('/callback', async (req, res) => {
                 <h2 style="color: #d00000;">${title}</h2>
                 <p>${msg}</p>
                 <div style="background: #222; color: #0f0; padding: 15px; margin: 15px 0; border-radius: 4px; text-align: left; font-family: monospace; font-size: 0.8rem; overflow-x: auto;">
-                    <strong>DEBUG REPORT (v2.1):</strong><br>
+                    <strong>DEBUG REPORT (v2.2):</strong><br>
                     ---------------------------<br>
                     <strong>Request Query:</strong><br>
                     State: ${state}<br>
