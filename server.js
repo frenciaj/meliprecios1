@@ -53,7 +53,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v3.1 - Column Sorting - ${new Date().toISOString()}
+        v3.2 - Enter to Save Price - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -299,7 +299,7 @@ app.get('/listings', async (req, res) => {
                                 <button class="edit-price-btn" onclick="editPrice('${item.id}', ${item.price})">✏️</button>
                             </div>
                             <div class="price-edit-form" style="display: none;">
-                                <input type="number" class="price-input" value="${item.price}" step="0.01" min="0" />
+                                <input type="number" class="price-input" value="${item.price}" step="0.01" min="0" onkeypress="if(event.key === 'Enter') savePrice('${item.id}')" />
                                 <button class="save-price-btn" onclick="savePrice('${item.id}')">✓</button>
                                 <button class="cancel-price-btn" onclick="cancelEdit('${item.id}')">✗</button>
                             </div>
