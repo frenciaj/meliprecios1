@@ -310,6 +310,11 @@ app.get('/listings', async (req, res) => {
             if (itemWrapper.code !== 200) return '';
             const item = itemWrapper.body;
 
+            // Determine if there's an active promotion/discount
+            const hasPromo = item.original_price && item.original_price > item.price;
+            const currentPrice = item.price;
+            const originalPrice = item.original_price || item.price;
+
             // Determine buy box status and price to win
             let buyBoxStatus = '';
             let buyBoxClass = 'status-na';
@@ -342,7 +347,7 @@ app.get('/listings', async (req, res) => {
             const fees = feeData.get(item.id) || { saleFee: 0, financingFee: 0 };
             const shipFee = shippingData.get(item.id) || 0;
             const totalDeductions = (fees.saleFee || 0) + (fees.financingFee || 0) + shipFee;
-            const netIncome = item.price - totalDeductions;
+            const netIncome = currentPrice - totalDeductions;
 
             const netIncomeFormatted = `$ ${netIncome.toLocaleString('es-AR')}`;
             const saleFeeFormatted = `$ ${fees.saleFee.toLocaleString('es-AR')}${fees.isEstimate ? ' (Est.)' : ''}`;
@@ -362,11 +367,16 @@ app.get('/listings', async (req, res) => {
                     <td>
                         <div class="price-edit-container" data-item-id="${item.id}">
                             <div class="price-display">
-                                <span class="price-value">$ ${item.price.toLocaleString('es-AR')}</span>
-                                <button class="edit-price-btn" onclick="editPrice('${item.id}', ${item.price})">✏️</button>
+                                ${hasPromo ? `
+                                    <div style="font-size: 0.75rem; color: #999; text-decoration: line-through;">$ ${originalPrice.toLocaleString('es-AR')}</div>
+                                    <div class="price-value" style="color: #00a650; font-weight: 700;">$ ${currentPrice.toLocaleString('es-AR')}</div>
+                                ` : `
+                                    <span class="price-value">$ ${currentPrice.toLocaleString('es-AR')}</span>
+                                `}
+                                <button class="edit-price-btn" onclick="editPrice('${item.id}', ${currentPrice})">✏️</button>
                             </div>
                             <div class="price-edit-form" style="display: none;">
-                                <input type="number" class="price-input" value="${item.price}" step="0.01" min="0" onkeydown="if(event.key === 'Enter') savePrice('${item.id}'); else if(event.key === 'Escape') cancelEdit('${item.id}')" />
+                                <input type="number" class="price-input" value="${currentPrice}" step="0.01" min="0" onkeydown="if(event.key === 'Enter') savePrice('${item.id}'); else if(event.key === 'Escape') cancelEdit('${item.id}')" />
                                 <button class="save-price-btn" onclick="savePrice('${item.id}')">✓</button>
                                 <button class="cancel-price-btn" onclick="cancelEdit('${item.id}')">✗</button>
                             </div>
@@ -375,11 +385,17 @@ app.get('/listings', async (req, res) => {
                     <td class="net-income-cell" style="font-weight: 600; color: #00a650;">
                         ${netIncomeFormatted}
                         <div class="fee-tooltip">
-                            <div class="tooltip-title">Detalle de costos</div>
+                            <div class="tooltip-title">Detalle de costos ${hasPromo ? '<span style="color: #00a650; font-size: 0.7rem; margin-left: 5px;">(Promo Activa)</span>' : ''}</div>
                             <div class="tooltip-row">
-                                <span class="tooltip-label">Precio:</span>
-                                <span class="tooltip-value">$ ${item.price.toLocaleString('es-AR')}</span>
+                                <span class="tooltip-label">Precio ${hasPromo ? 'Oferta' : 'Venta'}:</span>
+                                <span class="tooltip-value">$ ${currentPrice.toLocaleString('es-AR')}</span>
                             </div>
+                            ${hasPromo ? `
+                            <div class="tooltip-row" style="font-size: 0.7rem; color: #999; margin-top: -5px; margin-bottom: 5px;">
+                                <span class="tooltip-label">Normal:</span>
+                                <span class="tooltip-value" style="text-decoration: line-through;">$ ${originalPrice.toLocaleString('es-AR')}</span>
+                            </div>
+                            ` : ''}
                             <div class="tooltip-row">
                                 <span class="tooltip-label">Cargo por vender:</span>
                                 <span class="tooltip-value minus">-${saleFeeFormatted}</span>
