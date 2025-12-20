@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v8.9 - Robust Pricing & Fees - ${new Date().toISOString()}
+        v9.0 - Accurate Sale Prices - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -311,13 +311,24 @@ app.get('/listings', async (req, res) => {
             const item = itemWrapper.body;
 
             // Determine if there's an active promotion/discount
-            // Check original_price, base_price, or sale_price diffs
-            const currentPrice = Number(item.price) || 0;
-            const originalPrice = Number(item.original_price || item.base_price) || currentPrice;
+            // 1. Try to find a 'promotion' type in the prices array (New v9.0 Strategy)
+            let promoPrice = null;
+            let promoOriginal = null;
+
+            if (item.prices && Array.isArray(item.prices.prices)) {
+                const promo = item.prices.prices.find(p => p.type === 'promotion' || p.type === 'standard' && p.regular_amount);
+                if (promo && promo.amount < (promo.regular_amount || item.price)) {
+                    promoPrice = promo.amount;
+                    promoOriginal = promo.regular_amount;
+                }
+            }
+
+            const currentPrice = Number(promoPrice || item.price) || 0;
+            const originalPrice = Number(promoOriginal || item.original_price || item.base_price) || currentPrice;
             const hasPromo = originalPrice > currentPrice;
 
             if (index < 5) {
-                console.log(`[Item Debug] ID: ${item.id}, Price: ${currentPrice}, Orig: ${originalPrice}, HasPromo: ${hasPromo}`);
+                console.log(`[Item Debug] ID: ${item.id}, Price: ${currentPrice}, Orig: ${originalPrice}, HasPromo: ${hasPromo}, RawPrice: ${item.price}, PricesArrayFound: ${!!item.prices}`);
             }
 
             // Determine buy box status and price to win
