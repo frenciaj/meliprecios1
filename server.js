@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v8.1 - Resilience & Debugging - ${new Date().toISOString()}
+        v8.2 - Promotion Diagnostics - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -712,13 +712,19 @@ app.get('/promotions', async (req, res) => {
                 headers: { Authorization: `Bearer ${accessToken}` },
                 params: {
                     promotion_type: activeCampaignType,
-                    status: 'candidate',
+                    // status: 'candidate', // Removed to see more items
                     app_version: 'v2'
                 }
-            }).catch(e => ({ data: { results: [] } }));
+            }).catch(e => {
+                console.error(`[Promo Debug] Error fetching for ${activeCampaignId}:`, e.response?.data || e.message);
+                return { data: { results: [] } };
+            });
 
-            // For each candidate, fetch its full details (picture, title, brand) in batches
-            const candidateIds = candidatesRes.data.results?.map(r => r.id) || [];
+            console.log(`[Promo Debug] Found ${candidatesRes.data.results?.length || 0} results / ${candidatesRes.data.items?.length || 0} items for campaign ${activeCampaignId}`);
+
+            // Handle both possible response structures
+            const activeItems = candidatesRes.data.results || candidatesRes.data.items || [];
+            const candidateIds = activeItems.map(r => r.id).filter(id => id) || [];
 
             if (candidateIds.length > 0) {
                 const chunkArray = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size));
