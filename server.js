@@ -65,7 +65,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.5.4 - Granular Fees & Shipping - ${new Date().toISOString()}
+        v4.6 - Hardcoded Fees - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -278,32 +278,26 @@ app.get('/listings', async (req, res) => {
                         LISTING_TYPE_ALIASES[item.listing_type_id] === f.listing_type_id
                     ) || fees[0];
 
-                    if (feeInfo) {
-                        let finFee = 0;
-                        let sFee = 0;
-                        if (feeInfo.sale_fee_details) {
-                            feeInfo.sale_fee_details.forEach(d => {
-                                if (d.financing_add_on_fee) {
-                                    finFee += d.financing_add_on_fee;
-                                } else {
-                                    sFee += (d.fixed_fee || d.meli_percentage_fee || 0);
-                                }
-                            });
-                        } else {
-                            sFee = feeInfo.sale_fee_amount || 0;
-                        }
-                        const result = { saleFee: sFee, financingFee: finFee };
-                        feeData.set(itemId, result);
-                        GLOBAL_FEE_CACHE.set(cacheKey, result);
-                    } else {
-                        // Hard fallback if API fails
-                        const isPremium = (item.listing_type_id === 'gold_pro' || item.listing_type_id === 'premium');
-                        feeData.set(itemId, {
-                            saleFee: item.price * 0.145,
-                            financingFee: isPremium ? item.price * 0.04 : 0,
-                            isEstimate: true
+                    const sFee = item.price * 0.15; // Hardcoded at 15% per user request
+                    let finFee = 0;
+
+                    if (feeInfo && feeInfo.sale_fee_details) {
+                        feeInfo.sale_fee_details.forEach(d => {
+                            if (d.financing_add_on_fee) {
+                                finFee += d.financing_add_on_fee;
+                            }
                         });
                     }
+
+                    // Fallback for financing if it seems missing for Premium items
+                    const isPremium = (item.listing_type_id === 'gold_pro' || item.listing_type_id === 'premium');
+                    if (isPremium && finFee === 0) {
+                        finFee = item.price * 0.04; // Typical financing cost for Premium
+                    }
+
+                    const result = { saleFee: sFee, financingFee: finFee, isEstimate: false };
+                    feeData.set(itemId, result);
+                    GLOBAL_FEE_CACHE.set(cacheKey, result);
                 } catch (err) {
                     console.error(`Fee Error (${itemId}):`, err.message);
                     feeData.set(itemId, { saleFee: item.price * 0.15, financingFee: 0, isEstimate: true });
@@ -417,12 +411,12 @@ app.get('/listings', async (req, res) => {
                                 <span class="tooltip-value">$ ${item.price.toLocaleString('es-AR')}</span>
                             </div>
                             <div class="tooltip-row">
-                                <span class="tooltip-label">Cargo por vender:</span>
+                                <span class="tooltip-label">Cargo por vender (15%):</span>
                                 <span class="tooltip-value minus">-${saleFeeFormatted}</span>
                             </div>
                             ${fees.financingFee > 0 ? `
                             <div class="tooltip-row">
-                                <span class="tooltip-label">Costo por cuotas:</span>
+                                <span class="tooltip-label">Costo por tarjetas:</span>
                                 <span class="tooltip-value minus">-${financingFeeFormatted}</span>
                             </div>
                             ` : ''}
