@@ -1,0 +1,149 @@
+/* Mercado Libre Style Reset & Basics */
+:root {
+    --meli-yellow: #fff159;
+    --meli-blue: #3483fa;
+    --meli-navy: #2d3277;
+    --bg-gray: #ebebeb;
+    --text-black: #333;
+    --text-gray: #666;
+}
+
+body {
+    font-family: 'Proxima Nova', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-gray);
+    margin: 0;
+    padding: 0;
+    color: var(--text-black);
+}
+
+/* Header */
+header {
+    background-color: var(--meli-yellow);
+    padding: 10px 20px;
+    box-shadow: 0 1px 0 rgba(0,0,0,.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header h1 {
+    font-size: 1.2rem;
+    margin: 0;
+    color: var(--meli-navy);
+}
+
+header a {
+    text-decoration: none;
+    color: var(--text-black);
+    font-size: 0.9rem;
+}
+
+/* Container */
+.container {
+    max-width: 1200px;
+    margin: 20px auto;
+    padding: 0 20px;
+}
+
+/* Login Card */
+.login-card {
+    background: white;
+    padding: 40px;
+    border-radius: 6px;
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,.12);
+    text-align: center;
+    max-width: 400px;
+    margin: 100px auto;
+}
+
+.login-card h2 {
+    margin-bottom: 20px;
+}
+
+.btn-primary {
+    background-color: var(--meli-blue);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    display: inline-block;
+    transition: background-color 0.2s;
+}
+
+.btn-primary:hover {
+    background-color: #2968c8;
+}
+
+/* Listings Table */
+.card {
+    background: white;
+    border-radius: 6px;
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,.12);
+    padding: 20px;
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th {
+    text-align: left;
+    padding: 12px;
+    border-bottom: 2px solid #eee;
+    color: var(--text-gray);
+    font-size: 0.9rem;
+}
+
+td {
+    padding: 12px;
+    border-bottom: 1px solid #eee;
+    vertical-align: middle;
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+.price {
+    font-size: 1.2rem;
+    font-weight: 400;
+    color: var(--text-black);
+}
+
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-active {
+    background-color: #e6f7ee;
+    color: #00a650;
+}
+
+.status-paused {
+    background-color: #fff7e6;
+    color: #ff9900;
+}
+
+.thumbnail {
+    width: 50px;
+    height: 50px;
+    object-fit: contain;
+    border-radius: 4px;
+}
+
+.link-btn {
+    color: var(--meli-blue);
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.link-btn:hover {
+    text-decoration: underline;
+}
