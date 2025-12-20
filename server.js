@@ -235,6 +235,9 @@ app.get('/listings', async (req, res) => {
                         }
                     );
 
+                    // Log the entire response to see structure
+                    console.log(`Full API response for ${itemId}:`, JSON.stringify(priceToWinResponse.data, null, 2));
+
                     const competitionStatus = priceToWinResponse.data.competition_status;
                     buyBoxStatuses.set(itemId, competitionStatus);
                     console.log(`Item ${itemId} competition status:`, competitionStatus);
@@ -242,6 +245,9 @@ app.get('/listings', async (req, res) => {
                     console.error(`Error fetching price_to_win for ${itemId}:`, error.message);
                     buyBoxStatuses.set(itemId, 'error');
                 }
+
+                // Only fetch first item for debugging
+                break;
             }
         }
 
