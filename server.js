@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v8.4 - Deep Candidate Fetching - ${new Date().toISOString()}
+        v8.5 - Final Candidate Patch - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -748,7 +748,12 @@ app.get('/promotions', async (req, res) => {
                             headers: { Authorization: `Bearer ${accessToken}` },
                             params: { ids: batch.join(',') }
                         });
-                        candidates = candidates.concat(itemsResponse.data.filter(i => i && i.id));
+                        // Items multiget returns [{code: 200, body: {...}}, ...]
+                        const validItems = itemsResponse.data
+                            .filter(res => res.code === 200 && res.body)
+                            .map(res => res.body);
+
+                        candidates = candidates.concat(validItems);
                     } catch (e) {
                         console.error('Batch Item Fetch Error:', e.message);
                     }
