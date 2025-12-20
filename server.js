@@ -53,7 +53,7 @@ const renderPage = (title, content) => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v4.3 - Comprehensive Net Income - ${new Date().toISOString()}
+        v4.4 - Net Income Tooltip - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -271,52 +271,59 @@ app.get('/listings', async (req, res) => {
                             }
                         );
 
-                        if (feeResponse.data && feeResponse.data.length > 0) {
-                            const fees = Array.isArray(feeResponse.data) ? feeResponse.data : [feeResponse.data];
-                            const feeInfo = fees.find(f =>
-                                f.listing_type_id === item.listing_type_id ||
-                                (item.listing_type_id === 'gold_special' && f.listing_type_id === 'classic') ||
-                                (item.listing_type_id === 'gold_pro' && f.listing_type_id === 'premium')
-                            );
+                        const fees = Array.isArray(feeResponse.data) ? feeResponse.data : [feeResponse.data];
+                        // Match listing type, handling common aliases
+                        let feeInfo = fees.find(f =>
+                            f.listing_type_id === item.listing_type_id ||
+                            (item.listing_type_id === 'gold_special' && f.listing_type_id === 'classic') ||
+                            (item.listing_type_id === 'gold_pro' && f.listing_type_id === 'premium') ||
+                            (item.listing_type_id === 'classic' && f.listing_type_id === 'gold_special') ||
+                            (item.listing_type_id === 'premium' && f.listing_type_id === 'gold_pro')
+                        );
 
-                            if (feeInfo) {
-                                // Extract financing fee if detail is available
-                                let financingFee = 0;
-                                if (feeInfo.sale_fee_details) {
-                                    const financingDetail = feeInfo.sale_fee_details.find(d => d.financing_add_on_fee);
-                                    if (financingDetail) {
-                                        financingFee = financingDetail.financing_add_on_fee;
-                                    }
+                        // Fallback to first one if still not found
+                        if (!feeInfo && fees.length > 0) {
+                            console.log(`No exact fee match for ${item.listing_type_id}, using first available (${fees[0].listing_type_id})`);
+                            feeInfo = fees[0];
+                        }
+
+                        if (feeInfo) {
+                            // Extract financing fee if detail is available
+                            let financingFee = 0;
+                            if (feeInfo.sale_fee_details) {
+                                const financingDetail = feeInfo.sale_fee_details.find(d => d.financing_add_on_fee);
+                                if (financingDetail) {
+                                    financingFee = financingDetail.financing_add_on_fee;
                                 }
-
-                                const totalFees = {
-                                    saleFee: feeInfo.sale_fee_amount,
-                                    financingFee: financingFee
-                                };
-                                feeData.set(itemId, totalFees);
-                                feeCache.set(cacheKey, totalFees);
                             }
+
+                            const totalFees = {
+                                saleFee: feeInfo.sale_fee_amount,
+                                financingFee: financingFee
+                            };
+                            feeData.set(itemId, totalFees);
+                            feeCache.set(cacheKey, totalFees);
                         }
                     } catch (error) {
                         console.error(`Error fetching fees for ${itemId}:`, error.message);
                     }
                 }
+            }
 
-                // 3. Fetch Shipping Cost (if free shipping)
-                if (item.shipping && item.shipping.free_shipping) {
-                    try {
-                        const shippingResponse = await axios.get(
-                            `https://api.mercadolibre.com/items/${itemId}/shipping_options/cost`,
-                            {
-                                headers: { Authorization: `Bearer ${accessToken}` }
-                            }
-                        );
-                        if (shippingResponse.data && shippingResponse.data.shipping_fee) {
-                            shippingData.set(itemId, shippingResponse.data.shipping_fee);
+            // 3. Fetch Shipping Cost (if free shipping)
+            if (item.shipping && item.shipping.free_shipping) {
+                try {
+                    const shippingResponse = await axios.get(
+                        `https://api.mercadolibre.com/items/${itemId}/shipping_options/cost`,
+                        {
+                            headers: { Authorization: `Bearer ${accessToken}` }
                         }
-                    } catch (error) {
-                        console.error(`Error fetching shipping cost for ${itemId}:`, error.message);
+                    );
+                    if (shippingResponse.data && shippingResponse.data.shipping_fee) {
+                        shippingData.set(itemId, shippingResponse.data.shipping_fee);
                     }
+                } catch (error) {
+                    console.error(`Error fetching shipping cost for ${itemId}:`, error.message);
                 }
             }
         }
@@ -359,8 +366,13 @@ app.get('/listings', async (req, res) => {
 
             const fees = feeData.get(item.id) || { saleFee: 0, financingFee: 0 };
             const shipFee = shippingData.get(item.id) || 0;
-            const netIncome = item.price - (fees.saleFee || 0) - (fees.financingFee || 0) - shipFee;
+            const totalDeductions = (fees.saleFee || 0) + (fees.financingFee || 0) + shipFee;
+            const netIncome = item.price - totalDeductions;
+
             const netIncomeFormatted = `$ ${netIncome.toLocaleString('es-AR')}`;
+            const saleFeeFormatted = `$ ${fees.saleFee.toLocaleString('es-AR')}`;
+            const financingFeeFormatted = `$ ${fees.financingFee.toLocaleString('es-AR')}`;
+            const shipFeeFormatted = `$ ${shipFee.toLocaleString('es-AR')}`;
 
             return `
                 <tr>
@@ -384,7 +396,36 @@ app.get('/listings', async (req, res) => {
                             </div>
                         </div>
                     </td>
-                    <td style="font-weight: 500; color: #00a650;">${netIncomeFormatted}</td>
+                    <td class="net-income-cell" style="font-weight: 600; color: #00a650;">
+                        ${netIncomeFormatted}
+                        <div class="fee-tooltip">
+                            <div class="tooltip-title">Detalle de costos</div>
+                            <div class="tooltip-row">
+                                <span class="tooltip-label">Precio:</span>
+                                <span class="tooltip-value">$ ${item.price.toLocaleString('es-AR')}</span>
+                            </div>
+                            <div class="tooltip-row">
+                                <span class="tooltip-label">Cargo por vender:</span>
+                                <span class="tooltip-value minus">-${saleFeeFormatted}</span>
+                            </div>
+                            ${fees.financingFee > 0 ? `
+                            <div class="tooltip-row">
+                                <span class="tooltip-label">Costo por cuotas:</span>
+                                <span class="tooltip-value minus">-${financingFeeFormatted}</span>
+                            </div>
+                            ` : ''}
+                            ${shipFee > 0 ? `
+                            <div class="tooltip-row">
+                                <span class="tooltip-label">Costo de envío:</span>
+                                <span class="tooltip-value minus">-${shipFeeFormatted}</span>
+                            </div>
+                            ` : ''}
+                            <div class="tooltip-row total">
+                                <span class="tooltip-label">Recibís:</span>
+                                <span class="tooltip-value">${netIncomeFormatted}</span>
+                            </div>
+                        </div>
+                    </td>
                     <td>${priceToWin}</td>
                     <td>
                         <div class="qty-edit-container" data-item-id="${item.id}">
@@ -651,9 +692,8 @@ app.get('/listings', async (req, res) => {
                             });
                         };
                     </script>
-                ` : '<p>No active listings found.</p>'
-            }
-            </div >
+                ` : '<p>No active listings found.</p>'}
+            </div>
         <div style="text-align: center; margin-top: 20px;">
             <a href="/logout" style="color: #666; text-decoration: none;">Logout</a>
         </div>

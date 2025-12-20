@@ -309,3 +309,80 @@ tr:last-child td {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* Net Income Tooltip */
+.net-income-cell {
+    position: relative;
+    cursor: help;
+}
+
+.fee-tooltip {
+    visibility: hidden;
+    width: 220px;
+    background-color: #333;
+    color: #fff;
+    text-align: left;
+    border-radius: 6px;
+    padding: 12px;
+    position: absolute;
+    z-index: 100;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.3s, visibility 0.3s;
+    font-size: 0.85rem;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    font-weight: 400;
+    pointer-events: none;
+    line-height: 1.4;
+}
+
+.fee-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #333 transparent transparent transparent;
+}
+
+.net-income-cell:hover .fee-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+.tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.tooltip-row.total {
+    border-top: 1px solid #555;
+    margin-top: 8px;
+    padding-top: 8px;
+    font-weight: 600;
+}
+
+.tooltip-label {
+    color: #ccc;
+}
+
+.tooltip-value {
+    font-family: monospace;
+}
+
+.tooltip-value.minus {
+    color: #ff9999;
+}
+
+.tooltip-title {
+    font-weight: 600;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #555;
+    padding-bottom: 4px;
+    color: var(--meli-yellow);
+}
