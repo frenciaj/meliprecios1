@@ -244,11 +244,21 @@ app.get('/listings', async (req, res) => {
         const content = `
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2 style="margin: 0;">My Listings (${allItems.length})</h2>
+                    <h2 style="margin: 0;">My Listings (<span id="item-count">${allItems.length}</span>)</h2>
                     <span style="color: #666;">User ID: ${userId}</span>
                 </div>
+                
                 ${allItems.length > 0 ? `
-                    <table>
+                    <div style="margin-bottom: 20px;">
+                        <input 
+                            type="text" 
+                            id="search-input" 
+                            placeholder="Search by title or ID..." 
+                            style="width: 100%; padding: 12px; font-size: 14px; border: 1px solid #ddd; border-radius: 4px; font-family: 'Roboto', sans-serif;"
+                        />
+                    </div>
+                    
+                    <table id="listings-table">
                         <thead>
                             <tr>
                                 <th>Image</th>
@@ -261,6 +271,33 @@ app.get('/listings', async (req, res) => {
                         </thead>
                         <tbody>${tableRows}</tbody>
                     </table>
+                    
+                    <script>
+                        const searchInput = document.getElementById('search-input');
+                        const table = document.getElementById('listings-table');
+                        const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+                        const itemCount = document.getElementById('item-count');
+                        
+                        searchInput.addEventListener('input', function() {
+                            const query = this.value.toLowerCase();
+                            let visibleCount = 0;
+                            
+                            for (let i = 0; i < rows.length; i++) {
+                                const row = rows[i];
+                                const title = row.cells[1].textContent.toLowerCase();
+                                const id = row.cells[1].textContent.toLowerCase();
+                                
+                                if (title.includes(query) || id.includes(query)) {
+                                    row.style.display = '';
+                                    visibleCount++;
+                                } else {
+                                    row.style.display = 'none';
+                                }
+                            }
+                            
+                            itemCount.textContent = visibleCount;
+                        });
+                    </script>
                 ` : '<p>No active listings found.</p>'}
             </div>
             <div style="text-align: center; margin-top: 20px;">
