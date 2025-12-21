@@ -4,6 +4,41 @@ const crypto = require('crypto');
 const path = require('path');
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
+const sqlite3 = require('sqlite3').verbose();
+
+// Initialize Database
+const dbPath = process.env.VERCEL ? '/tmp/meliprecios.db' : 'meliprecios.db';
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) console.error('DB Error:', err.message);
+    else console.log(`Connected to SQLite database at ${dbPath}`);
+});
+
+db.run(`CREATE TABLE IF NOT EXISTS items (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    thumbnail TEXT,
+    price REAL,
+    currency_id TEXT,
+    available_quantity INTEGER,
+    original_price REAL,
+    permalink TEXT,
+    status TEXT,
+    listing_type_id TEXT,
+    sale_price_amount REAL,
+    sale_price_regular_amount REAL,
+    promotion_id TEXT,
+    promotion_type TEXT,
+    price_to_win REAL,
+    last_updated DATETIME
+)`);
+
+// Ensure DB is closed on exit
+process.on('SIGINT', () => {
+    db.close(() => {
+        console.log('DB Connection closed.');
+        process.exit(0);
+    });
+});
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -89,7 +124,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v10.0 - Inline Promo Editing - ${new Date().toISOString()}
+        v11.0 - Listing Manager & Repricer - With Local DB & Pagination - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -208,7 +243,6 @@ app.get('/callback', async (req, res) => {
 
 app.get('/listings', async (req, res) => {
     const accessToken = req.cookies.access_token;
-
     if (!accessToken) return res.redirect('/');
 
     try {
@@ -217,568 +251,277 @@ app.get('/listings', async (req, res) => {
         });
         const userId = userResponse.data.id;
 
-        let itemIds = [];
-        let offset = 0;
-        let total = 1; // Start with 1 to enter loop
+        // Pagination & Search Params
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 50;
+        const offset = (page - 1) * limit;
+        const search = req.query.q ? `%${req.query.q}%` : '%';
+        const statusFilter = req.query.status || 'all';
 
-        while (itemIds.length < total) {
-            const searchResponse = await axios.get(`https://api.mercadolibre.com/users/${userId}/items/search`, {
-                headers: { Authorization: `Bearer ${accessToken}` },
-                params: {
-                    status: 'active,paused,closed,under_review',
-                    limit: 100,
-                    offset: offset,
-                    search_type: 'scan'
-                }
-            });
+        // Build SQL Query
+        let sql = `SELECT * FROM items WHERE (title LIKE ? OR id LIKE ?)`;
+        const params = [search, search];
 
-            const results = searchResponse.data.results || [];
-            itemIds = itemIds.concat(results);
-            total = searchResponse.data.paging.total;
-            offset += results.length;
-
-            // Safety break to prevent infinite loops if total is misreported
-            if (results.length === 0) break;
+        if (statusFilter !== 'all') {
+            sql += ` AND status = ?`;
+            params.push(statusFilter);
         }
 
-        let allItems = [];
-        if (itemIds.length > 0) {
-            const chunkArray = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size));
-            const batches = chunkArray(itemIds, 20);
-
-            for (const batch of batches) {
-                const itemsResponse = await axios.get(`https://api.mercadolibre.com/items`, {
-                    headers: { Authorization: `Bearer ${accessToken}` },
-                    params: { ids: batch.join(',') }
-                });
-                allItems = allItems.concat(itemsResponse.data);
+        // Get Total Count
+        db.get(`SELECT COUNT(*) as count FROM (${sql})`, params, (err, row) => {
+            if (err) {
+                console.error('DB Count Error:', err);
+                return res.send(renderPage('Error', '<p>Database Error</p>', 'listings'));
             }
-        }
+            const totalItems = row.count;
+            const totalPages = Math.ceil(totalItems / limit);
 
-        // Fetch Buy Box, Fees, and Shipping in Parallel
-        const buyBoxData = new Map();
-        const feeData = new Map();
-        const shippingData = new Map();
-        const salePriceData = new Map();
+            // Get Items
+            sql += ` ORDER BY last_updated DESC LIMIT ? OFFSET ?`;
+            params.push(limit, offset);
 
-        await Promise.all(allItems.map(async (itemWrapper) => {
-            if (itemWrapper.code !== 200) return;
-            const item = itemWrapper.body;
-            const itemId = item.id;
-
-            // 1. Fetch Buy Box Status
-            if (item.catalog_product_id) {
-                try {
-                    const pbRes = await axios.get(`https://api.mercadolibre.com/items/${itemId}/price_to_win`, {
-                        headers: { Authorization: `Bearer ${accessToken}` },
-                        params: { siteId: 'MLA', version: 'v2' }
-                    });
-                    buyBoxData.set(itemId, { status: pbRes.data.status, priceToWin: pbRes.data.price_to_win });
-                } catch (err) {
-                    // console.error(`BuyBox Error (${itemId}):`, err.message);
+            db.all(sql, params, async (err, rows) => {
+                if (err) {
+                    console.error('DB Query Error:', err);
+                    return res.send(renderPage('Error', '<p>Database Query Error</p>', 'listings'));
                 }
-            }
 
-            // 2. Fetch Actual Sale Price (v9.1 strategy - The most accurate)
-            try {
-                const spRes = await axios.get(`https://api.mercadolibre.com/items/${itemId}/sale_price`, {
-                    headers: { Authorization: `Bearer ${accessToken}` }
-                });
-                if (spRes.data && spRes.data.amount) {
-                    salePriceData.set(itemId, {
-                        amount: spRes.data.amount,
-                        regular: spRes.data.regular_amount || item.price,
-                        promoId: spRes.data.metadata?.promotion_id,
-                        promoType: spRes.data.metadata?.promotion_type
-                    });
-                }
-            } catch (err) {
-                // Ignore 404/others, use base item price as fallback
-            }
+                const allItems = rows;
 
-            // 3. Fetch Costs via Pricing Reference API (v6.0 - Unified Source)
-            try {
-                // We use the detail endpoint to get precise selling_fees and shipping_fees
-                const detailRes = await axios.get(`https://api.mercadolibre.com/suggestions/items/${itemId}/details`, {
-                    headers: { Authorization: `Bearer ${accessToken}` }
-                });
+                // Hydrate with Real-time Data (Fees, BuyBox) - limited to current page
+                const buyBoxData = new Map();
+                const feeData = new Map();
+                const shippingData = new Map();
+                // We use DB sale prices initially, but verify if needed? 
+                // Let's trust DB for speed (Sync button is there for a reason).
+                // Just fetch fees and buybox.
 
-                if (detailRes.data && detailRes.data.costs) {
-                    const c = detailRes.data.costs;
-                    feeData.set(itemId, {
-                        saleFee: c.selling_fees || 0,
-                        financingFee: 0, // Suggestions API combines fees into selling_fees
-                        isSug: true
-                    });
-                    shippingData.set(itemId, c.shipping_fees || 0);
-                } else {
-                    // Fallback to basic 15% and 0 shipping if details missing
-                    feeData.set(itemId, { saleFee: item.price * 0.15, financingFee: 0, isEstimate: true });
-                    shippingData.set(itemId, 0);
-                }
-            } catch (err) {
-                // Fail-safe fallback
-                feeData.set(itemId, { saleFee: item.price * 0.15, financingFee: 0, isEstimate: true });
-                shippingData.set(itemId, 0);
-            }
-        }));
+                await Promise.all(allItems.map(async (item) => {
+                    const itemId = item.id;
 
+                    // 1. Buy Box
+                    try {
+                        const pbRes = await axios.get(`https://api.mercadolibre.com/items/${itemId}/price_to_win`, {
+                            headers: { Authorization: `Bearer ${accessToken}` },
+                            params: { siteId: 'MLA', version: 'v2' }
+                        });
+                        buyBoxData.set(itemId, { status: pbRes.data.status, priceToWin: pbRes.data.price_to_win });
+                    } catch (e) { }
 
-        const tableRows = allItems.map((itemWrapper, index) => {
-            if (itemWrapper.code !== 200) return '';
-            const item = itemWrapper.body;
+                    // 2. Fees & Shipping
+                    try {
+                        const detailRes = await axios.get(`https://api.mercadolibre.com/suggestions/items/${itemId}/details`, {
+                            headers: { Authorization: `Bearer ${accessToken}` }
+                        });
+                        if (detailRes.data?.costs) {
+                            const c = detailRes.data.costs;
+                            feeData.set(itemId, { saleFee: c.selling_fees, financingFee: 0 });
+                            shippingData.set(itemId, c.shipping_fees);
+                        } else {
+                            feeData.set(itemId, { saleFee: item.price * 0.15, financingFee: 0, isEstimate: true });
+                            shippingData.set(itemId, 0);
+                        }
+                    } catch (e) {
+                        feeData.set(itemId, { saleFee: item.price * 0.15, financingFee: 0, isEstimate: true });
+                        shippingData.set(itemId, 0);
+                    }
+                }));
 
-            // Determine if there's an active promotion/discount (v9.1 Strategy)
-            const spData = salePriceData.get(item.id);
-            const currentPrice = spData ? spData.amount : item.price;
-            const originalPrice = spData ? spData.regular : (item.original_price || item.base_price || item.price);
-            const hasPromo = originalPrice > currentPrice;
+                // Render Table Rows
+                const tableRows = allItems.map((item) => {
+                    const spAmount = item.sale_price_amount;
+                    const spRegular = item.sale_price_regular_amount;
+                    const currentPrice = spAmount || item.price;
+                    const originalPrice = spRegular || item.original_price || item.price;
+                    const hasPromo = originalPrice > currentPrice;
 
-            if (index < 5) {
-                console.log(`[Item Debug v9.1] ID: ${item.id}, FinalSalePrice: ${currentPrice}, BasePrice: ${item.price}, OrigPrice: ${originalPrice}, HasPromo: ${hasPromo}`);
-            }
+                    // Buy Box Logic
+                    let buyBoxStatus = '';
+                    let buyBoxClass = 'status-na';
+                    let priceToWin = '-';
+                    const bbData = buyBoxData.get(item.id);
+                    if (bbData) {
+                        const s = bbData.status;
+                        if (s === 'winning') { buyBoxStatus = '🏆 Winning'; buyBoxClass = 'status-winning'; }
+                        else if (s === 'sharing_first_place') { buyBoxStatus = '🏆 Sharing 1st'; buyBoxClass = 'status-winning'; }
+                        else if (s === 'losing') { buyBoxStatus = 'Losing'; buyBoxClass = 'status-losing'; }
 
-            // Determine buy box status and price to win
-            let buyBoxStatus = '';
-            let buyBoxClass = 'status-na';
-            let priceToWin = '-';
-
-            if (item.catalog_product_id) {
-                const data = buyBoxData.get(item.id);
-                if (data) {
-                    const competitionStatus = data.status;
-                    if (competitionStatus === 'winning') {
-                        buyBoxStatus = '🏆 Winning';
-                        buyBoxClass = 'status-winning';
-                    } else if (competitionStatus === 'sharing_first_place') {
-                        buyBoxStatus = '🏆 Sharing 1st';
-                        buyBoxClass = 'status-winning';
-                    } else if (competitionStatus === 'losing') {
-                        buyBoxStatus = 'Losing';
-                        buyBoxClass = 'status-losing';
-                    } else if (competitionStatus === 'listed') {
-                        buyBoxStatus = 'Listed';
-                        buyBoxClass = 'status-na';
+                        if (bbData.priceToWin) priceToWin = `$ ${bbData.priceToWin.toLocaleString('es-AR')}`;
                     }
 
-                    if (data.priceToWin !== null && data.priceToWin !== undefined) {
-                        priceToWin = `$ ${data.priceToWin.toLocaleString('es-AR')}`;
-                    }
-                }
-            }
+                    // Fees
+                    const fees = feeData.get(item.id) || { saleFee: 0 };
+                    const shipFee = Number(shippingData.get(item.id)) || 0;
+                    const saleFee = Number(fees.saleFee) || 0;
+                    const netIncome = currentPrice - saleFee - shipFee;
+                    const netIncomeFormatted = `$ ${isFinite(netIncome) ? netIncome.toLocaleString('es-AR') : '---'}`;
 
-            const fees = feeData.get(item.id) || { saleFee: 0, financingFee: 0, isEstimate: true };
-            const shipFee = Number(shippingData.get(item.id)) || 0;
-            const saleFee = Number(fees.saleFee) || 0;
-            const finFee = Number(fees.financingFee) || 0;
-
-            const totalDeductions = saleFee + finFee + shipFee;
-            const netIncome = currentPrice - totalDeductions;
-
-            const netIncomeFormatted = `$ ${isFinite(netIncome) ? netIncome.toLocaleString('es-AR') : '---'}`;
-            const saleFeeFormatted = `$ ${isFinite(saleFee) ? saleFee.toLocaleString('es-AR') : '0'}${fees.isEstimate ? ' (Est.)' : ''}`;
-            const shipFeeFormatted = `$ ${isFinite(shipFee) ? shipFee.toLocaleString('es-AR') : '0'}`;
-
-            return `
-                <tr>
-                    <td>
-                        <img src="${item.thumbnail}" alt="" class="thumbnail">
-                    </td>
-                    <td>
-                        <div style="font-weight: 500;">${item.title}</div>
-                        <div style="font-size: 0.8rem; color: #999;">
-                            ID: ${item.id} | Marca: ${item.attributes && item.attributes.find(a => a.id === 'BRAND') ? item.attributes.find(a => a.id === 'BRAND').value_name : 'N/A'}
-                        </div>
-                    </td>
-                    <td>
-                        <div class="price-edit-container" data-item-id="${item.id}">
-                            <div class="price-display">
-                                <span class="price-value">$ ${Number(item.price).toLocaleString('es-AR')}</span>
-                                <button class="edit-price-btn" onclick="editPrice('${item.id}', ${item.price})">✏️</button>
-                            </div>
-                            <div class="price-edit-form" style="display: none;">
-                                <input type="number" class="price-input" value="${item.price}" step="0.01" min="0" onkeydown="if(event.key === 'Enter') savePrice('${item.id}'); else if(event.key === 'Escape') cancelEdit('${item.id}')" />
-                                <button class="save-price-btn" onclick="savePrice('${item.id}')">✓</button>
-                                <button class="cancel-price-btn" onclick="cancelEdit('${item.id}')">✗</button>
-                            </div>
-                        </div>
-                    </td>
-                    <td style="text-align: center;">
-                        ${hasPromo ? `
-                            <div class="promo-edit-container" data-item-id="${item.id}" data-promo-id="${spData?.promoId || ''}" data-promo-type="${spData?.promoType || ''}">
-                                <div class="promo-display">
-                                    <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">
-                                        $ <span class="promo-value-text">${currentPrice.toLocaleString('es-AR')}</span>
+                    return `
+                        <tr>
+                            <td><img src="${item.thumbnail}" class="thumbnail"></td>
+                            <td>
+                                <div style="font-weight: 500;">${item.title}</div>
+                                <div style="font-size: 0.8rem; color: #999;">ID: ${item.id}</div>
+                            </td>
+                            <td>
+                                <div class="price-edit-container" data-item-id="${item.id}">
+                                    <div class="price-display">
+                                        <span class="price-value">$ ${Number(item.price).toLocaleString('es-AR')}</span>
+                                        <button class="edit-price-btn" onclick="editPrice('${item.id}', ${item.price})">✏️</button>
                                     </div>
-                                    <div style="font-size: 0.7rem; color: #666; background: #e6f7ee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">
-                                        En Promoción
+                                    <div class="price-edit-form" style="display: none;">
+                                        <input type="number" class="price-input" value="${item.price}" step="0.01" onkeydown="if(event.key==='Enter') savePrice('${item.id}')" />
+                                        <button class="save-price-btn" onclick="savePrice('${item.id}')">✓</button>
+                                        <button class="cancel-price-btn" onclick="cancelEdit('${item.id}')">✗</button>
                                     </div>
-                                    <button class="edit-price-btn" onclick="editPromoPrice('${item.id}', ${currentPrice})" style="margin-left: 5px;">✏️</button>
                                 </div>
-                                <div class="promo-edit-form" style="display: none; align-items: center; justify-content: center; gap: 5px; margin-top: 5px;">
-                                    <input type="number" class="promo-input" value="${currentPrice}" step="0.01" min="0" style="width: 80px; padding: 4px;" onkeydown="if(event.key === 'Enter') savePromoPrice('${item.id}'); else if(event.key === 'Escape') cancelPromoEdit('${item.id}')" />
-                                    <button class="save-price-btn" onclick="savePromoPrice('${item.id}')">✓</button>
-                                    <button class="cancel-price-btn" onclick="cancelPromoEdit('${item.id}')">✗</button>
+                            </td>
+                            <td style="text-align: center;">
+                                ${hasPromo ? `
+                                    <div class="promo-edit-container" data-item-id="${item.id}" data-promo-id="${item.promotion_id || ''}" data-promo-type="${item.promotion_type || ''}">
+                                        <div class="promo-display">
+                                            <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">$ <span class="promo-value-text">${currentPrice.toLocaleString('es-AR')}</span></div>
+                                            <div style="font-size: 0.7rem; color: #666; background: #e6f7ee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">En Promoción</div>
+                                            <button class="edit-price-btn" onclick="editPromoPrice('${item.id}', ${currentPrice})" style="margin-left: 5px;">✏️</button>
+                                        </div>
+                                        <div class="promo-edit-form" style="display: none; align-items: center; justify-content: center; gap: 5px; margin-top: 5px;">
+                                            <input type="number" class="promo-input" value="${currentPrice}" step="0.01" style="width: 80px; padding: 4px;" onkeydown="if(event.key==='Enter') savePromoPrice('${item.id}')" />
+                                            <button class="save-price-btn" onclick="savePromoPrice('${item.id}')">✓</button>
+                                            <button class="cancel-price-btn" onclick="cancelPromoEdit('${item.id}')">✗</button>
+                                        </div>
+                                    </div>
+                                ` : '<span style="color: #ccc;">---</span>'}
+                            </td>
+                            <td class="net-income-cell" style="font-weight: 600; color: #00a650;">
+                                ${netIncomeFormatted}
+                                <div class="fee-tooltip">
+                                     <div class="tooltip-title">Detalle de Costos</div>
+                                     <div class="tooltip-row"><span class="tooltip-label">Venta:</span><span class="tooltip-value">$ ${currentPrice.toLocaleString('es-AR')}</span></div>
+                                     <div class="tooltip-row"><span class="tooltip-label">Cargos:</span><span class="tooltip-value minus">-$ ${saleFee.toLocaleString('es-AR')}</span></div>
+                                     <div class="tooltip-row"><span class="tooltip-label">Envío:</span><span class="tooltip-value minus">-$ ${shipFee.toLocaleString('es-AR')}</span></div>
+                                     <div class="tooltip-row total"><span class="tooltip-label">Recibís:</span><span class="tooltip-value">${netIncomeFormatted}</span></div>
                                 </div>
+                            </td>
+                            <td>${priceToWin}</td>
+                            <td>
+                                <div class="qty-edit-container" data-item-id="${item.id}">
+                                    <div class="qty-display"><span class="qty-value">${item.available_quantity}</span><button class="edit-qty-btn" onclick="editQty('${item.id}', ${item.available_quantity})">✏️</button></div>
+                                    <div class="qty-edit-form" style="display: none;">
+                                        <input type="number" class="qty-input" value="${item.available_quantity}" step="1" onkeydown="if(event.key==='Enter') saveQty('${item.id}')" />
+                                        <button class="save-qty-btn" onclick="saveQty('${item.id}')">✓</button>
+                                        <button class="cancel-qty-btn" onclick="cancelQtyEdit('${item.id}')">✗</button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><span class="status-badge status-${item.status}">${item.status}</span></td>
+                            <td><span class="status-badge ${buyBoxClass}">${buyBoxStatus}</span></td>
+                            <td><a href="${item.permalink}" target="_blank" class="link-btn">View</a></td>
+                        </tr>
+                    `;
+                }).join('');
+
+                const content = `
+                    <div class="card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h2 style="margin: 0;">My Listings (<span id="item-count">${totalItems}</span>)</h2>
+                            <div style="display: flex; gap: 10px;">
+                                <button onclick="syncListings()" id="sync-btn" style="background: #00a650; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                                    🔄 Sync
+                                </button>
+                                <span style="color: #666; align-self: center;">User: ${userId}</span>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; background: #f9f9f9; padding: 15px; border-radius: 8px;">
+                            <form action="/listings" method="GET" style="display: flex; gap: 10px; width: 100%;">
+                                <input type="text" name="q" value="${req.query.q || ''}" placeholder="Search title or ID..." style="flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                <select name="status" style="padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <option value="all" ${statusFilter === 'all' ? 'selected' : ''}>All Statuses</option>
+                                    <option value="active" ${statusFilter === 'active' ? 'selected' : ''}>Active</option>
+                                    <option value="paused" ${statusFilter === 'paused' ? 'selected' : ''}>Paused</option>
+                                    <option value="closed" ${statusFilter === 'closed' ? 'selected' : ''}>Closed</option>
+                                </select>
+                                <select name="limit" onchange="this.form.submit()" style="padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <option value="50" ${limit === 50 ? 'selected' : ''}>50 / page</option>
+                                    <option value="100" ${limit === 100 ? 'selected' : ''}>100 / page</option>
+                                    <option value="200" ${limit === 200 ? 'selected' : ''}>200 / page</option>
+                                </select>
+                                <button type="submit" style="background: #3483fa; color: white; border: none; padding: 0 20px; border-radius: 4px; cursor: pointer;">Search</button>
+                            </form>
+                        </div>
+
+                        ${totalItems === 0 ? `
+                            <div style="text-align: center; padding: 40px; color: #666;">
+                                <p>No items found in database.</p>
+                                <p>Click <strong>Sync</strong> to fetch your listings from Mercado Libre.</p>
                             </div>
                         ` : `
-                            <span style="color: #ccc;">---</span>
+                            <table id="listings-table">
+                                <thead>
+                                    <tr>
+                                        <th>Imagen</th>
+                                        <th>Nombre</th>
+                                        <th>Precio (Base)</th>
+                                        <th>Promoción</th>
+                                        <th>Lo que recibis</th>
+                                        <th>Precio para Ganar</th>
+                                        <th>Cant</th>
+                                        <th>Status</th>
+                                        <th>Buy Box</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${tableRows}</tbody>
+                            </table>
+
+                            <!-- Pagination -->
+                            <div style="display: flex; justify-content: center; align-items: center; margin-top: 20px; gap: 15px;">
+                                ${page > 1 ? `<a href="/listings?page=${page - 1}&limit=${limit}&q=${req.query.q || ''}&status=${statusFilter}" style="padding: 8px 16px; background: #eee; border-radius: 4px; text-decoration: none; color: #333;">&laquo; Prev</a>` : ''}
+                                <span style="color: #666;">Page ${page} of ${totalPages}</span>
+                                ${page < totalPages ? `<a href="/listings?page=${page + 1}&limit=${limit}&q=${req.query.q || ''}&status=${statusFilter}" style="padding: 8px 16px; background: #eee; border-radius: 4px; text-decoration: none; color: #333;">Next &raquo;</a>` : ''}
+                            </div>
                         `}
-                    </td>
-                    <td class="net-income-cell" style="font-weight: 600; color: #00a650;">
-                        ${netIncomeFormatted}
-                        <div class="fee-tooltip">
-                            <div class="tooltip-title">Detalle de costos ${hasPromo ? '<span style="color: #00a650; font-size: 0.7rem; margin-left: 5px;">(Promo Activa)</span>' : ''}</div>
-                            <div class="tooltip-row">
-                                <span class="tooltip-label">Precio ${hasPromo ? 'Oferta' : 'Venta'}:</span>
-                                <span class="tooltip-value">$ ${currentPrice.toLocaleString('es-AR')}</span>
-                            </div>
-                            ${hasPromo ? `
-                            <div class="tooltip-row" style="font-size: 0.7rem; color: #999; padding-left: 10px;">
-                                <span class="tooltip-label">Base:</span>
-                                <span class="tooltip-value">$ ${originalPrice.toLocaleString('es-AR')}</span>
-                            </div>
-                            ` : ''}
-                            <div class="tooltip-row">
-                                <span class="tooltip-label">Cargo por vender:</span>
-                                <span class="tooltip-value minus">-${saleFeeFormatted}</span>
-                            </div>
-                            <div class="tooltip-row">
-                                <span class="tooltip-label">Costo de envío:</span>
-                                <span class="tooltip-value minus">-${shipFeeFormatted}</span>
-                            </div>
-                            <div class="tooltip-row total">
-                                <span class="tooltip-label">Recibís:</span>
-                                <span class="tooltip-value">${netIncomeFormatted}</span>
-                            </div>
-                        </div>
-                    </td>
-                    <td>${priceToWin}</td>
-                    <td>
-                        <div class="qty-edit-container" data-item-id="${item.id}">
-                            <div class="qty-display">
-                                <span class="qty-value">${item.available_quantity}</span>
-                                <button class="edit-qty-btn" onclick="editQty('${item.id}', ${item.available_quantity})">✏️</button>
-                            </div>
-                            <div class="qty-edit-form" style="display: none;">
-                                <input type="number" class="qty-input" value="${item.available_quantity}" step="1" min="0" onkeydown="if(event.key === 'Enter') saveQty('${item.id}'); else if(event.key === 'Escape') cancelQtyEdit('${item.id}')" />
-                                <button class="save-qty-btn" onclick="saveQty('${item.id}')">✓</button>
-                                <button class="cancel-qty-btn" onclick="cancelQtyEdit('${item.id}')">✗</button>
-                            </div>
-                        </div>
-                    </td>
-                    <td><span class="status-badge status-${item.status}">${item.status}</span></td>
-                    <td><span class="status-badge ${buyBoxClass}">${buyBoxStatus}</span></td>
-                    <td><a href="${item.permalink}" target="_blank" class="link-btn">View @ Meli</a></td>
-                </tr>
-            `;
-        }).join('');
 
-        const content = `
-            <div class="card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2 style="margin: 0;">My Listings (<span id="item-count">${allItems.length}</span>)</h2>
-                    <span style="color: #666;">User ID: ${userId}</span>
-                </div>
-                
-                ${allItems.length > 0 ? `
-                    <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center;">
-                        <input 
-                            type="text" 
-                            id="search-input" 
-                            placeholder="Search by title or ID..." 
-                            style="flex-grow: 1; padding: 12px; font-size: 14px; border: 1px solid #ddd; border-radius: 4px; font-family: 'Roboto', sans-serif;"
-                        />
-                        <select id="status-filter" style="padding: 12px; font-size: 14px; border: 1px solid #ddd; border-radius: 4px; font-family: 'Roboto', sans-serif; background-color: white; cursor: pointer;">
-                            <option value="all">All Statuses</option>
-                            <option value="active">Active</option>
-                            <option value="paused">Paused</option>
-                            <option value="closed">Closed</option>
-                            <option value="under_review">Under Review</option>
-                        </select>
+                        <script>
+                            async function syncListings() {
+                                const btn = document.getElementById('sync-btn');
+                                const originalText = btn.innerHTML;
+                                btn.disabled = true;
+                                btn.innerHTML = '⏳ Syncing...';
+                                
+                                try {
+                                    const res = await fetch('/sync-listings', { method: 'POST' });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                        alert('Sync Complete! Processed ' + data.count + ' items.');
+                                        location.reload();
+                                    } else {
+                                        alert('Sync Error: ' + data.error);
+                                    }
+                                } catch (e) {
+                                    alert('Sync Failed: ' + e.message);
+                                } finally {
+                                    btn.innerHTML = originalText;
+                                    btn.disabled = false;
+                                }
+                            }
+                            
+                            // Re-attach global edit functions if needed (they are on window)
+                            // Note: We removed the client-side search listener because we now use server-side search
+                        </script>
                     </div>
-                    
-                    <table id="listings-table">
-                        <thead>
-                            <tr>
-                                <th>Imagen</th>
-                                <th onclick="sortTable(1, 'text')" style="cursor: pointer;" data-column="1">Nombre <span id="sort-icon-1"></span></th>
-                                <th onclick="sortTable(2, 'number')" style="cursor: pointer;" data-column="2">Precio (Base) <span id="sort-icon-2"></span></th>
-                                <th onclick="sortTable(3, 'number')" style="cursor: pointer; color: #00a650;" data-column="3">Promoción <span id="sort-icon-3"></span></th>
-                                <th onclick="sortTable(4, 'number')" style="cursor: pointer;" data-column="4">Lo que recibis <span id="sort-icon-4"></span></th>
-                                <th onclick="sortTable(5, 'number')" style="cursor: pointer;" data-column="5">Precio para Ganar <span id="sort-icon-5"></span></th>
-                                <th onclick="sortTable(6, 'number')" style="cursor: pointer;" data-column="6">Cant <span id="sort-icon-6"></span></th>
-                                <th onclick="sortTable(7, 'text')" style="cursor: pointer;" data-column="7">Status <span id="sort-icon-7"></span></th>
-                                <th onclick="sortTable(8, 'text')" style="cursor: pointer;" data-column="8">Buy Box <span id="sort-icon-8"></span></th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>${tableRows}</tbody>
-                    </table>
-                    
-                    <script>
-                        const searchInput = document.getElementById('search-input');
-                        const statusFilter = document.getElementById('status-filter');
-                        const table = document.getElementById('listings-table');
-                        const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
-                        const itemCount = document.getElementById('item-count');
-                        
-                        function applyFilters() {
-                            const query = searchInput.value.toLowerCase();
-                            const status = statusFilter.value.toLowerCase();
-                            let visibleCount = 0;
-                            
-                            for (let i = 0; i < rows.length; i++) {
-                                const row = rows[i];
-                                const itemDetailsText = row.cells[1].textContent.toLowerCase(); // Contains title, ID, and brand
-                                const rowStatus = row.cells[7].textContent.toLowerCase().trim();
-                                
-                                const matchesSearch = itemDetailsText.includes(query);
-                                const matchesStatus = status === 'all' || rowStatus === status;
-                                
-                                if (matchesSearch && matchesStatus) {
-                                    row.style.display = '';
-                                    visibleCount++;
-                                } else {
-                                    row.style.display = 'none';
-                                }
-                            }
-                            
-                            itemCount.textContent = visibleCount;
-                        }
-                        
-                        searchInput.addEventListener('input', applyFilters);
-                        statusFilter.addEventListener('change', applyFilters);
+                `;
 
-                        
-                        // Price editing functions
-                        window.editPrice = function(itemId, currentPrice) {
-                            const container = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"]');
-                            container.querySelector('.price-display').style.display = 'none';
-                            container.querySelector('.price-edit-form').style.display = 'flex';
-                            container.querySelector('.price-input').focus();
-                        };
-                        
-                        window.cancelEdit = function(itemId) {
-                            const container = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"]');
-                            container.querySelector('.price-display').style.display = 'flex';
-                            container.querySelector('.price-edit-form').style.display = 'none';
-                        };
-                        
-                        // PROMO Price editing functions (v10.0)
-                        window.editPromoPrice = function(itemId, currentPrice) {
-                            const container = document.querySelector('.promo-edit-container[data-item-id="' + itemId + '"]');
-                            container.querySelector('.promo-display').style.display = 'none';
-                            container.querySelector('.promo-edit-form').style.display = 'flex';
-                            container.querySelector('.promo-input').focus();
-                        };
-
-                        window.cancelPromoEdit = function(itemId) {
-                            const container = document.querySelector('.promo-edit-container[data-item-id="' + itemId + '"]');
-                            container.querySelector('.promo-display').style.display = 'block';
-                            container.querySelector('.promo-edit-form').style.display = 'none';
-                        };
-
-                        window.savePromoPrice = async function(itemId) {
-                            const container = document.querySelector('.promo-edit-container[data-item-id="' + itemId + '"]');
-                            const input = container.querySelector('.promo-input');
-                            const newPrice = parseFloat(input.value);
-                            const promoId = container.getAttribute('data-promo-id');
-                            const promoType = container.getAttribute('data-promo-type');
-
-                            if (isNaN(newPrice) || newPrice < 0) {
-                                alert('Por favor ingresa un precio válido');
-                                return;
-                            }
-
-                            if (!promoId || !promoType) {
-                                alert('Error: No se encontró información de la promoción para este ítem.');
-                                return;
-                            }
-
-                            const saveBtn = container.querySelector('.save-price-btn');
-                            const originalText = saveBtn.textContent;
-                            saveBtn.textContent = '⏳';
-                            saveBtn.disabled = true;
-
-                            try {
-                                const response = await fetch('/apply-promotion', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                        item_id: itemId,
-                                        promotion_id: promoId,
-                                        promotion_type: promoType,
-                                        deal_price: newPrice
-                                    })
-                                });
-
-                                const result = await response.json();
-
-                                if (result.success) {
-                                    container.querySelector('.promo-value-text').textContent = newPrice.toLocaleString('es-AR');
-                                    container.querySelector('.promo-display').style.display = 'block';
-                                    container.querySelector('.promo-edit-form').style.display = 'none';
-                                    // Optional: Reload to update net income / fees
-                                    setTimeout(() => location.reload(), 500);
-                                } else {
-                                    alert('Error: ' + result.error);
-                                }
-                            } catch (error) {
-                                alert('Error al actualizar precio de promoción: ' + error.message);
-                            } finally {
-                                saveBtn.textContent = originalText;
-                                saveBtn.disabled = false;
-                            }
-                        };
-                        
-                        window.savePrice = async function(itemId) {
-                            const container = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"]');
-                            const input = container.querySelector('.price-input');
-                            const newPrice = parseFloat(input.value);
-                            
-                            if (isNaN(newPrice) || newPrice < 0) {
-                                alert('Please enter a valid price');
-                                return;
-                            }
-                            
-                            const saveBtn = container.querySelector('.save-price-btn');
-                            const originalText = saveBtn.textContent;
-                            saveBtn.textContent = '⏳';
-                            saveBtn.disabled = true;
-                            
-                            try {
-                                const response = await fetch('/update-price', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ itemId: itemId, newPrice: newPrice })
-                                });
-                                
-                                const result = await response.json();
-                                
-                                if (result.success) {
-                                    container.querySelector('.price-value').textContent = '$ ' + newPrice.toLocaleString('es-AR');
-                                    container.querySelector('.price-display').style.display = 'flex';
-                                    container.querySelector('.price-edit-form').style.display = 'none';
-                                } else {
-                                    alert('Error: ' + result.error);
-                                }
-                            } catch (error) {
-                                alert('Failed to update price: ' + error.message);
-                            } finally {
-                                saveBtn.textContent = originalText;
-                                saveBtn.disabled = false;
-                            }
-                        };
-                        
-                        // Quantity editing functions
-                        window.editQty = function(itemId, currentQty) {
-                            const container = document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"]');
-                            container.querySelector('.qty-display').style.display = 'none';
-                            container.querySelector('.qty-edit-form').style.display = 'flex';
-                            container.querySelector('.qty-input').focus();
-                        };
-                        
-                        window.cancelQtyEdit = function(itemId) {
-                            const container = document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"]');
-                            container.querySelector('.qty-display').style.display = 'flex';
-                            container.querySelector('.qty-edit-form').style.display = 'none';
-                        };
-                        
-                        window.saveQty = async function(itemId) {
-                            const container = document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"]');
-                            const input = container.querySelector('.qty-input');
-                            const newQty = parseInt(input.value);
-                            
-                            if (isNaN(newQty) || newQty < 0) {
-                                alert('Please enter a valid quantity');
-                                return;
-                            }
-                            
-                            const saveBtn = container.querySelector('.save-qty-btn');
-                            const originalText = saveBtn.textContent;
-                            saveBtn.textContent = '⏳';
-                            saveBtn.disabled = true;
-                            
-                            try {
-                                const response = await fetch('/update-quantity', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ itemId: itemId, newQuantity: newQty })
-                                });
-                                
-                                const result = await response.json();
-                                
-                                if (result.success) {
-                                    container.querySelector('.qty-value').textContent = newQty;
-                                    container.querySelector('.qty-display').style.display = 'flex';
-                                    container.querySelector('.qty-edit-form').style.display = 'none';
-                                } else {
-                                    alert('Error: ' + result.error);
-                                }
-                            } catch (error) {
-                                alert('Failed to update quantity: ' + error.message);
-                            } finally {
-                                saveBtn.textContent = originalText;
-                                saveBtn.disabled = false;
-                            }
-                        };
-                        
-                        // Table sorting functionality
-                        let currentSortColumn = null;
-                        let currentSortDirection = 'asc';
-                        
-                        window.sortTable = function(columnIndex, dataType) {
-                            const table = document.getElementById('listings-table');
-                            const tbody = table.getElementsByTagName('tbody')[0];
-                            const rows = Array.from(tbody.getElementsByTagName('tr'));
-                            
-                            if (currentSortColumn === columnIndex) {
-                                currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
-                            } else {
-                                currentSortDirection = 'asc';
-                                currentSortColumn = columnIndex;
-                            }
-                            
-                            for (let i = 1; i <= 8; i++) {
-                                const icon = document.getElementById('sort-icon-' + i);
-                                if (icon) icon.textContent = '';
-                            }
-                            
-                            const currentIcon = document.getElementById('sort-icon-' + columnIndex);
-                            if (currentIcon) {
-                                currentIcon.textContent = currentSortDirection === 'asc' ? ' ▲' : ' ▼';
-                            }
-                            
-                            rows.sort(function(a, b) {
-                                let aValue = a.cells[columnIndex].textContent.trim();
-                                let bValue = b.cells[columnIndex].textContent.trim();
-                                
-                                if (dataType === 'number') {
-                                    aValue = parseFloat(aValue.replace(/[^0-9.-]/g, '')) || 0;
-                                    bValue = parseFloat(bValue.replace(/[^0-9.-]/g, '')) || 0;
-                                    return currentSortDirection === 'asc' ? aValue - bValue : bValue - aValue;
-                                } else {
-                                    return currentSortDirection === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
-                                }
-                            });
-                            
-                            rows.forEach(function(row) {
-                                tbody.appendChild(row);
-                            });
-                        };
-                    </script>
-                ` : '<p>No active listings found.</p>'}
-            </div>
-    `;
-
-        res.send(renderPage('My Listings', content, 'listings'));
+                res.send(renderPage('My Listings', content, 'listings'));
+            });
+        });
 
     } catch (error) {
         console.error('Listings Error:', error.message);
         res.send(renderPage('Error', `<p>Error fetching listings: ${error.message}</p>`, 'listings'));
     }
 });
+
 
 // Update item price
 app.post('/update-price', async (req, res) => {
@@ -1134,6 +877,12 @@ app.post('/apply-promotion', async (req, res) => {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
 
+        // Update DB immediately
+        db.run(`UPDATE items SET sale_price_amount = ?, last_updated = ? WHERE id = ?`,
+            [deal_price, new Date().toISOString(), item_id], (err) => {
+                if (err) console.error('DB Update Error:', err);
+            });
+
         res.json({ success: true });
     } catch (error) {
         console.error('Apply Promo Error:', error.response?.data || error.message);
@@ -1141,6 +890,117 @@ app.post('/apply-promotion', async (req, res) => {
             success: false,
             error: error.response?.data?.message || error.message
         });
+    }
+});
+
+app.post('/sync-listings', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+    if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    try {
+        const userRes = await axios.get('https://api.mercadolibre.com/users/me', {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const userId = userRes.data.id;
+
+        // 1. Fetch all item IDs
+        let itemIds = [];
+        let offset = 0;
+        let total = 1;
+        while (itemIds.length < total) {
+            const searchRes = await axios.get(`https://api.mercadolibre.com/users/${userId}/items/search`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                params: { status: 'active,paused,closed', limit: 100, offset: offset, search_type: 'scan' }
+            });
+            const results = searchRes.data.results || [];
+            itemIds = itemIds.concat(results);
+            total = searchRes.data.paging.total;
+            offset += results.length;
+            if (results.length === 0) break;
+        }
+
+        console.log(`[Sync] Found ${itemIds.length} items to sync.`);
+
+        // 2. Process in batches of 50
+        const chunkArray = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size));
+        const batches = chunkArray(itemIds, 50);
+        let processedCount = 0;
+
+        for (const batch of batches) {
+            // A. Fetch Item Details
+            const itemsRes = await axios.get(`https://api.mercadolibre.com/items?ids=${batch.join(',')}&attributes=id,title,thumbnail,price,currency_id,available_quantity,original_price,permalink,status,listing_type_id`, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+
+            const strategies = itemsRes.data.map(async (r) => {
+                if (!r.body || r.code !== 200) return null;
+                const item = r.body;
+
+                // B. Fetch Sale Price (Parallel)
+                let salePrice = null;
+                let saleOriginal = null;
+                let promoId = null;
+                let promoType = null;
+
+                try {
+                    const spRes = await axios.get(`https://api.mercadolibre.com/items/${item.id}/sale_price`, {
+                        headers: { Authorization: `Bearer ${accessToken}` }
+                    }).catch(() => ({ data: {} })); // Ignore errors
+                    if (spRes.data?.amount) {
+                        salePrice = spRes.data.amount;
+                        saleOriginal = spRes.data.regular_amount;
+                        promoId = spRes.data.metadata?.promotion_id;
+                        promoType = spRes.data.metadata?.promotion_type;
+                    }
+                } catch (e) { }
+
+                // C. Fetch Price To Win (Parallel) - Optional, maybe skip for speed? 
+                // Let's skip for now to speed up sync, or do it? User wants "net income", which needs fees.
+                // We'll trust the main item price for now and add fees later if needed or in real-time view.
+
+                return {
+                    id: item.id,
+                    title: item.title,
+                    thumbnail: item.thumbnail,
+                    price: item.price,
+                    currency_id: item.currency_id,
+                    available_quantity: item.available_quantity,
+                    original_price: item.original_price,
+                    permalink: item.permalink,
+                    status: item.status,
+                    listing_type_id: item.listing_type_id,
+                    sale_price_amount: salePrice,
+                    sale_price_regular_amount: saleOriginal,
+                    promotion_id: promoId,
+                    promotion_type: promoType,
+                    price_to_win: 0, // Placeholder
+                    last_updated: new Date().toISOString()
+                };
+            });
+
+            const processedItems = (await Promise.all(strategies)).filter(i => i !== null);
+
+            // D. Upsert to DB
+            const stmt = db.prepare(`INSERT OR REPLACE INTO items (id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+
+            db.serialize(() => {
+                db.run("BEGIN TRANSACTION");
+                processedItems.forEach(item => {
+                    stmt.run(item.id, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated);
+                });
+                db.run("COMMIT");
+            });
+            stmt.finalize();
+
+            processedCount += processedItems.length;
+            console.log(`[Sync] Processed ${processedCount}/${itemIds.length} items`);
+        }
+
+        res.json({ success: true, count: processedCount });
+
+    } catch (error) {
+        console.error('Sync Error:', error.message);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
