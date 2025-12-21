@@ -89,7 +89,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v9.3 - UI Translation - ${new Date().toISOString()}
+        v10.0 - Inline Promo Editing - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -287,7 +287,9 @@ app.get('/listings', async (req, res) => {
                 if (spRes.data && spRes.data.amount) {
                     salePriceData.set(itemId, {
                         amount: spRes.data.amount,
-                        regular: spRes.data.regular_amount || item.price
+                        regular: spRes.data.regular_amount || item.price,
+                        promoId: spRes.data.metadata?.promotion_id,
+                        promoType: spRes.data.metadata?.promotion_type
                     });
                 }
             } catch (err) {
@@ -403,11 +405,21 @@ app.get('/listings', async (req, res) => {
                     </td>
                     <td style="text-align: center;">
                         ${hasPromo ? `
-                            <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">
-                                $ ${currentPrice.toLocaleString('es-AR')}
-                            </div>
-                            <div style="font-size: 0.7rem; color: #666; background: #e6f7ee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">
-                                En Promoción
+                            <div class="promo-edit-container" data-item-id="${item.id}" data-promo-id="${spData?.promoId || ''}" data-promo-type="${spData?.promoType || ''}">
+                                <div class="promo-display">
+                                    <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">
+                                        $ <span class="promo-value-text">${currentPrice.toLocaleString('es-AR')}</span>
+                                    </div>
+                                    <div style="font-size: 0.7rem; color: #666; background: #e6f7ee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">
+                                        En Promoción
+                                    </div>
+                                    <button class="edit-price-btn" onclick="editPromoPrice('${item.id}', ${currentPrice})" style="margin-left: 5px;">✏️</button>
+                                </div>
+                                <div class="promo-edit-form" style="display: none; align-items: center; justify-content: center; gap: 5px; margin-top: 5px;">
+                                    <input type="number" class="promo-input" value="${currentPrice}" step="0.01" min="0" style="width: 80px; padding: 4px;" onkeydown="if(event.key === 'Enter') savePromoPrice('${item.id}'); else if(event.key === 'Escape') cancelPromoEdit('${item.id}')" />
+                                    <button class="save-price-btn" onclick="savePromoPrice('${item.id}')">✓</button>
+                                    <button class="cancel-price-btn" onclick="cancelPromoEdit('${item.id}')">✗</button>
+                                </div>
                             </div>
                         ` : `
                             <span style="color: #ccc;">---</span>
@@ -551,6 +563,73 @@ app.get('/listings', async (req, res) => {
                             const container = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"]');
                             container.querySelector('.price-display').style.display = 'flex';
                             container.querySelector('.price-edit-form').style.display = 'none';
+                        };
+                        
+                        // PROMO Price editing functions (v10.0)
+                        window.editPromoPrice = function(itemId, currentPrice) {
+                            const container = document.querySelector('.promo-edit-container[data-item-id="' + itemId + '"]');
+                            container.querySelector('.promo-display').style.display = 'none';
+                            container.querySelector('.promo-edit-form').style.display = 'flex';
+                            container.querySelector('.promo-input').focus();
+                        };
+
+                        window.cancelPromoEdit = function(itemId) {
+                            const container = document.querySelector('.promo-edit-container[data-item-id="' + itemId + '"]');
+                            container.querySelector('.promo-display').style.display = 'block';
+                            container.querySelector('.promo-edit-form').style.display = 'none';
+                        };
+
+                        window.savePromoPrice = async function(itemId) {
+                            const container = document.querySelector('.promo-edit-container[data-item-id="' + itemId + '"]');
+                            const input = container.querySelector('.promo-input');
+                            const newPrice = parseFloat(input.value);
+                            const promoId = container.getAttribute('data-promo-id');
+                            const promoType = container.getAttribute('data-promo-type');
+
+                            if (isNaN(newPrice) || newPrice < 0) {
+                                alert('Por favor ingresa un precio válido');
+                                return;
+                            }
+
+                            if (!promoId || !promoType) {
+                                alert('Error: No se encontró información de la promoción para este ítem.');
+                                return;
+                            }
+
+                            const saveBtn = container.querySelector('.save-price-btn');
+                            const originalText = saveBtn.textContent;
+                            saveBtn.textContent = '⏳';
+                            saveBtn.disabled = true;
+
+                            try {
+                                const response = await fetch('/apply-promotion', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        item_id: itemId,
+                                        promotion_id: promoId,
+                                        promotion_type: promoType,
+                                        deal_price: newPrice
+                                    })
+                                });
+
+                                const result = await response.json();
+
+                                if (result.success) {
+                                    container.querySelector('.promo-value-text').textContent = newPrice.toLocaleString('es-AR');
+                                    container.querySelector('.promo-display').style.display = 'block';
+                                    container.querySelector('.promo-edit-form').style.display = 'none';
+                                    // Optional: Reload to update net income / fees
+                                    setTimeout(() => location.reload(), 500);
+                                } else {
+                                    alert('Error: ' + result.error);
+                                }
+                            } catch (error) {
+                                alert('Error al actualizar precio de promoción: ' + error.message);
+                            } finally {
+                                saveBtn.textContent = originalText;
+                                saveBtn.disabled = false;
+                            }
                         };
                         
                         window.savePrice = async function(itemId) {
