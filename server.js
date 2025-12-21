@@ -124,7 +124,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v11.1 - Listing Manager & Repricer - Sync Fix - ${new Date().toISOString()}
+        v11.2 - Listing Manager & Repricer - Batch Size Fix - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -927,9 +927,9 @@ app.post('/sync-listings', async (req, res) => {
 
         console.log(`[Sync] Found ${itemIds.length} items to sync.`);
 
-        // 2. Process in batches of 50
+        // 2. Process in batches of 20 (API Limit)
         const chunkArray = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size));
-        const batches = chunkArray(itemIds, 50);
+        const batches = chunkArray(itemIds, 20);
         let processedCount = 0;
 
         for (const batch of batches) {
