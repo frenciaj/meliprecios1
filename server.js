@@ -124,7 +124,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v11.0 - Listing Manager & Repricer - With Local DB & Pagination - ${new Date().toISOString()}
+        v11.1 - Listing Manager & Repricer - Sync Fix - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -910,13 +910,19 @@ app.post('/sync-listings', async (req, res) => {
         while (itemIds.length < total) {
             const searchRes = await axios.get(`https://api.mercadolibre.com/users/${userId}/items/search`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
-                params: { status: 'active,paused,closed', limit: 100, offset: offset, search_type: 'scan' }
+                params: {
+                    status: 'active,paused,closed',
+                    limit: 100,
+                    offset: offset
+                }
             });
             const results = searchRes.data.results || [];
             itemIds = itemIds.concat(results);
             total = searchRes.data.paging.total;
             offset += results.length;
-            if (results.length === 0) break;
+
+            // Limit to prevents infinite loops or excessive API usage (e.g., max 3000 items for now)
+            if (results.length === 0 || offset > 10000) break;
         }
 
         console.log(`[Sync] Found ${itemIds.length} items to sync.`);
@@ -999,8 +1005,12 @@ app.post('/sync-listings', async (req, res) => {
         res.json({ success: true, count: processedCount });
 
     } catch (error) {
-        console.error('Sync Error:', error.message);
-        res.status(500).json({ success: false, error: error.message });
+        console.error('Sync Error:', error.response?.data || error.message);
+        res.status(500).json({
+            success: false,
+            error: error.response?.data?.message || error.message || 'Unknown Sync Error',
+            details: error.response?.data
+        });
     }
 });
 
