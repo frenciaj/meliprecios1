@@ -126,7 +126,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.0 - Multi-User Support - Filtered Database - ${new Date().toISOString()}
+        v12.1 - UI Improvements: "Mis Artículos" & User Badge - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -426,12 +426,21 @@ app.get('/listings', async (req, res) => {
                 const content = `
                     <div class="card">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                            <h2 style="margin: 0;">My Listings (<span id="item-count">${totalItems}</span>)</h2>
-                            <div style="display: flex; gap: 10px;">
-                                <button onclick="syncListings()" id="sync-btn" style="background: #00a650; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 5px;">
-                                    🔄 Sync
+                            <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                                Mis Artículos 
+                                <span id="item-count" style="background: #eee; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; color: #666;">${totalItems}</span>
+                            </h2>
+                            <div style="display: flex; gap: 15px; align-items: center;">
+                                <div style="display: flex; align-items: center; gap: 8px; background: #f0f8ff; padding: 6px 12px; border-radius: 20px; border: 1px solid #d0e8ff;">
+                                    <span style="font-size: 1.2rem;">👤</span>
+                                    <div style="display: flex; flex-direction: column; line-height: 1;">
+                                        <span style="font-size: 0.7rem; color: #666; font-weight: 500;">Vendedor</span>
+                                        <span style="font-weight: 600; color: #333;">${userName}</span>
+                                    </div>
+                                </div>
+                                <button onclick="syncListings()" id="sync-btn" style="background: white; color: #00a650; border: 1px solid #00a650; padding: 8px 16px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 500; transition: all 0.2s;">
+                                    <span>🔄</span> Actualizar
                                 </button>
-                                <span style="color: #666; align-self: center;">User: ${userName}</span>
                             </div>
                         </div>
 
@@ -493,8 +502,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.0';
-                                    const footerDescription = 'Listing Manager & Repricer - Multi-User Support';
+                                    const version = 'v12.1';
+                                    const footerDescription = 'Listing Manager & Repricer - UI Polish';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
