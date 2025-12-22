@@ -7,10 +7,20 @@ require('dotenv').config();
 const sqlite3 = require('sqlite3').verbose();
 
 // Initialize Database
+const fs = require('fs');
+
+// Initialize Database
 const dbPath = process.env.VERCEL ? '/tmp/meliprecios.db' : 'meliprecios.db';
+console.log(`[Startup] Initializing Database at: ${dbPath}`);
+
 const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) console.error('DB Error:', err.message);
-    else console.log(`Connected to SQLite database at ${dbPath}`);
+    if (err) {
+        console.error('[Startup] Critical DB Connection Error:', err.message);
+    } else {
+        console.log(`[Startup] Connected to SQLite database at ${dbPath}`);
+        // Enable WAL mode for better concurrency
+        db.run('PRAGMA journal_mode = WAL;');
+    }
 });
 
 db.run(`CREATE TABLE IF NOT EXISTS items_v14 (
@@ -128,7 +138,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.20 - Backend Timeout Enforced - ${new Date().toISOString()}
+        v12.21 - DB & Process Guard - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -518,8 +528,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.20';
-                                    const footerDescription = 'Listing Manager & Repricer - Backend Timeout Enforced';
+                                    const version = 'v12.21';
+                                    const footerDescription = 'Listing Manager & Repricer - DB & Process Guard';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
