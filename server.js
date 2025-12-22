@@ -120,8 +120,8 @@ const renderPage = (title, content, activeTab = 'listings') => `
 </head>
 <body>
     <header>
-        <div class="header-content">
-            <h1>Meli Connector</h1>
+        <div class="header-content" style="text-align: center; flex: 1;">
+            <h1>Listado De Articulos</h1>
         </div>
         <div style="display: flex; gap: 20px; align-items: center;">
             <a href="/">Home</a>
@@ -138,7 +138,8 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.28 - Promo DB Fix - ${new Date().toISOString()}
+        <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
+        <div style="margin-top: 5px;">v12.29 - Aesthetic Polish - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -528,8 +529,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.28';
-                                    const footerDescription = 'Listing Manager & Repricer - Promo DB Fix';
+                                    const version = 'v12.29';
+                                    const footerDescription = 'Listing Manager & Repricer - Aesthetic Polish';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
