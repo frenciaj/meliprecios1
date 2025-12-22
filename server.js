@@ -139,7 +139,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.35 - Fix Scope - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.36 - Fix Pagination Vars - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -529,8 +529,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.35';
-                                    const footerDescription = 'Listing Manager & Repricer - Fix Scope';
+                                    const version = 'v12.36';
+                                    const footerDescription = 'Listing Manager & Repricer - Fix Pagination Vars';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -848,6 +848,28 @@ app.get('/promotions', async (req, res) => {
         const offset = (page - 1) * perPage;
         const searchQuery = req.query.search || '';
 
+        // Build WHERE clause for search
+        let whereClause = 'user_id = ?';
+        let queryParams = [userId];
+
+        if (searchQuery) {
+            whereClause += ' AND (title LIKE ? OR id LIKE ? OR brand LIKE ?)';
+            const searchPattern = `%${searchQuery}%`;
+            queryParams.push(searchPattern, searchPattern, searchPattern);
+        }
+
+        // Get total count (with search filter) - moved outside if block
+        const totalItems = await new Promise((resolve, reject) => {
+            db.get(
+                `SELECT COUNT(*) as count FROM items_v14 WHERE ${whereClause}`,
+                queryParams,
+                (err, row) => err ? reject(err) : resolve(row.count)
+            );
+        });
+
+        const totalPages = Math.ceil(totalItems / perPage);
+        console.log(`[Promotions] Total: ${totalItems} items, Page ${page}/${totalPages}, Search: "${searchQuery}"`);
+
         if (activeCampaignId) {
             console.log(`[Promotions] Fetching items for ID: ${activeCampaignId}, Type: ${activeCampaignType}`);
 
@@ -868,29 +890,7 @@ app.get('/promotions', async (req, res) => {
 
             // ===== NEW APPROACH: Load from DB, then enrich with promo data =====
 
-            // Build WHERE clause for search
-            let whereClause = 'user_id = ?';
-            let queryParams = [userId];
-
-            if (searchQuery) {
-                whereClause += ' AND (title LIKE ? OR id LIKE ? OR brand LIKE ?)';
-                const searchPattern = `%${searchQuery}%`;
-                queryParams.push(searchPattern, searchPattern, searchPattern);
-            }
-
-            // 1a. Get total count (with search filter)
-            const totalItems = await new Promise((resolve, reject) => {
-                db.get(
-                    `SELECT COUNT(*) as count FROM items_v14 WHERE ${whereClause}`,
-                    queryParams,
-                    (err, row) => err ? reject(err) : resolve(row.count)
-                );
-            });
-
-            const totalPages = Math.ceil(totalItems / perPage);
-            console.log(`[Promotions] Total: ${totalItems} items, Page ${page}/${totalPages}, Search: "${searchQuery}"`);
-
-            // 1. Load all items from database (fast!)
+            // Load paginated items from database (with search filter)
             const dbItems = await new Promise((resolve, reject) => {
                 db.all(
                     `SELECT * FROM items_v14 WHERE ${whereClause} ORDER BY last_updated DESC LIMIT ? OFFSET ?`,
