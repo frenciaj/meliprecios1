@@ -13,8 +13,9 @@ const db = new sqlite3.Database(dbPath, (err) => {
     else console.log(`Connected to SQLite database at ${dbPath}`);
 });
 
-db.run(`CREATE TABLE IF NOT EXISTS items (
-    id TEXT PRIMARY KEY,
+db.run(`CREATE TABLE IF NOT EXISTS items_v12 (
+    id TEXT,
+    user_id TEXT,
     title TEXT,
     thumbnail TEXT,
     price REAL,
@@ -29,7 +30,8 @@ db.run(`CREATE TABLE IF NOT EXISTS items (
     promotion_id TEXT,
     promotion_type TEXT,
     price_to_win REAL,
-    last_updated DATETIME
+    last_updated DATETIME,
+    PRIMARY KEY (id, user_id)
 )`);
 
 // Ensure DB is closed on exit
@@ -124,7 +126,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v11.3 - Listing Manager & Repricer - User Nickname Display - ${new Date().toISOString()}
+        v12.0 - Multi-User Support - Filtered Database - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -260,8 +262,8 @@ app.get('/listings', async (req, res) => {
         const statusFilter = req.query.status || 'all';
 
         // Build SQL Query
-        let sql = `SELECT * FROM items WHERE (title LIKE ? OR id LIKE ?)`;
-        const params = [search, search];
+        let sql = `SELECT * FROM items_v12 WHERE user_id = ? AND (title LIKE ? OR id LIKE ?)`;
+        const params = [userId, search, search];
 
         if (statusFilter !== 'all') {
             sql += ` AND status = ?`;
@@ -491,6 +493,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
+                                    const version = 'v12.0';
+                                    const footerDescription = 'Listing Manager & Repricer - Multi-User Support';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -987,13 +991,13 @@ app.post('/sync-listings', async (req, res) => {
 
             const processedItems = (await Promise.all(strategies)).filter(i => i !== null);
 
-            // D. Upsert to DB
-            const stmt = db.prepare(`INSERT OR REPLACE INTO items (id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            // D. Upsert to DB with user_id
+            const stmt = db.prepare(`INSERT OR REPLACE INTO items_v12 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
             db.serialize(() => {
                 db.run("BEGIN TRANSACTION");
                 processedItems.forEach(item => {
-                    stmt.run(item.id, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated);
+                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated);
                 });
                 db.run("COMMIT");
             });
