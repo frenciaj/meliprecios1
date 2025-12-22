@@ -124,7 +124,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v11.2 - Listing Manager & Repricer - Batch Size Fix - ${new Date().toISOString()}
+        v11.3 - Listing Manager & Repricer - User Nickname Display - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -250,6 +250,7 @@ app.get('/listings', async (req, res) => {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
         const userId = userResponse.data.id;
+        const userName = userResponse.data.nickname || userResponse.data.first_name || 'Seller';
 
         // Pagination & Search Params
         const page = parseInt(req.query.page) || 1;
@@ -428,7 +429,7 @@ app.get('/listings', async (req, res) => {
                                 <button onclick="syncListings()" id="sync-btn" style="background: #00a650; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 5px;">
                                     🔄 Sync
                                 </button>
-                                <span style="color: #666; align-self: center;">User: ${userId}</span>
+                                <span style="color: #666; align-self: center;">User: ${userName}</span>
                             </div>
                         </div>
 
