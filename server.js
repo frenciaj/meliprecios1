@@ -517,8 +517,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.6';
-                                    const footerDescription = 'Listing Manager & Repricer - Syntax Fix';
+                                    const version = 'v12.7';
+                                    const footerDescription = 'Listing Manager & Repricer - Render Fix';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -662,10 +662,6 @@ app.get('/listings', async (req, res) => {
                                     });
                                     
                                     if (res.ok) {
-                                        // Success - since apply-promotion redirects or returns HTML usually? 
-                                        // Wait, checking apply-promotion implementation... 
-                                        // It returns res.send('<script>...location.href="/promotions"...</script>') or similar?
-                                        // No, let's assume it returns JSON or we just reload.
                                         location.reload();
                                     } else {
                                         const text = await res.text();
