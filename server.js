@@ -128,7 +128,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.14 - Alphabetical Sort - ${new Date().toISOString()}
+        v12.15 - Promo Debug Limits - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -518,8 +518,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.14';
-                                    const footerDescription = 'Listing Manager & Repricer - Alphabetical Sort';
+                                    const version = 'v12.15';
+                                    const footerDescription = 'Listing Manager & Repricer - Promo Debug Limits';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1100,20 +1100,27 @@ app.post('/apply-promotion', async (req, res) => {
         }
 
         // 2. Make the request with authoritative type
+        let lastError;
         try {
             console.log(`[Promo] Sending Update. Type: ${authoritativeType}`);
             await makeRequest(authoritativeType);
         } catch (err1) {
+            lastError = err1;
             console.error('[Promo] Attempt 1 Failed:', err1.response?.data || err1.message);
 
-            // Attempt 2: Retry with Uppercase if failed (Fallback)
+            // Attempt 2: Retry with Uppercase
             if (authoritativeType && authoritativeType !== authoritativeType.toUpperCase()) {
-                console.log(`[Promo] Retrying with uppercase type: ${authoritativeType.toUpperCase()}`);
-                await makeRequest(authoritativeType.toUpperCase());
-            } else {
-                throw err1;
+                try {
+                    console.log(`[Promo] Retrying with uppercase type: ${authoritativeType.toUpperCase()}`);
+                    await makeRequest(authoritativeType.toUpperCase());
+                    lastError = null; // Success
+                } catch (err2) {
+                    lastError = err2;
+                }
             }
         }
+
+        if (lastError) throw lastError;
 
         // Update DB immediately
         db.run(`UPDATE items SET sale_price_amount = ?, last_updated = ? WHERE id = ?`,
@@ -1123,12 +1130,25 @@ app.post('/apply-promotion', async (req, res) => {
 
         res.json({ success: true });
     } catch (error) {
-        console.error('Apply Promo Error:', error.response?.data || error.message);
+        // Construct verbose error for client debugging
+        const debugInfo = {
+            message: error.response?.data?.message || error.message,
+            tried_type: promotion_type,
+            api_error: error.response?.data
+        };
+        console.error('Apply Promo Final Error:', JSON.stringify(debugInfo));
+
         res.status(500).json({
             success: false,
-            error: error.response?.data?.message || error.message
+            error: JSON.stringify(debugInfo) // Send JSON as string to ensure it shows in alert
         });
     }
+    console.error('Apply Promo Error:', error.response?.data || error.message);
+    res.status(500).json({
+        success: false,
+        error: error.response?.data?.message || error.message
+    });
+}
 });
 
 app.post('/sync-listings', async (req, res) => {
