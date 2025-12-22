@@ -1138,17 +1138,8 @@ app.post('/apply-promotion', async (req, res) => {
         };
         console.error('Apply Promo Final Error:', JSON.stringify(debugInfo));
 
-        res.status(500).json({
-            success: false,
-            error: JSON.stringify(debugInfo) // Send JSON as string to ensure it shows in alert
-        });
-    }
-    console.error('Apply Promo Error:', error.response?.data || error.message);
-    res.status(500).json({
-        success: false,
-        error: error.response?.data?.message || error.message
     });
-}
+    }
 });
 
 app.post('/sync-listings', async (req, res) => {
