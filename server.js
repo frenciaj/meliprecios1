@@ -139,7 +139,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.33 - Fix Promo API - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.34 - Pagination - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -529,8 +529,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.33';
-                                    const footerDescription = 'Listing Manager & Repricer - Fix Promo API';
+                                    const version = 'v12.34';
+                                    const footerDescription = 'Listing Manager & Repricer - Pagination';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -861,11 +861,39 @@ app.get('/promotions', async (req, res) => {
 
             // ===== NEW APPROACH: Load from DB, then enrich with promo data =====
 
+            // Pagination and search setup
+            const page = parseInt(req.query.page) || 1;
+            const perPage = 50;
+            const offset = (page - 1) * perPage;
+            const searchQuery = req.query.search || '';
+
+            // Build WHERE clause for search
+            let whereClause = 'user_id = ?';
+            let queryParams = [userId];
+
+            if (searchQuery) {
+                whereClause += ' AND (title LIKE ? OR id LIKE ? OR brand LIKE ?)';
+                const searchPattern = `%${searchQuery}%`;
+                queryParams.push(searchPattern, searchPattern, searchPattern);
+            }
+
+            // 1a. Get total count (with search filter)
+            const totalItems = await new Promise((resolve, reject) => {
+                db.get(
+                    `SELECT COUNT(*) as count FROM items_v14 WHERE ${whereClause}`,
+                    queryParams,
+                    (err, row) => err ? reject(err) : resolve(row.count)
+                );
+            });
+
+            const totalPages = Math.ceil(totalItems / perPage);
+            console.log(`[Promotions] Total: ${totalItems} items, Page ${page}/${totalPages}, Search: "${searchQuery}"`);
+
             // 1. Load all items from database (fast!)
             const dbItems = await new Promise((resolve, reject) => {
                 db.all(
-                    `SELECT * FROM items_v14 WHERE user_id = ? ORDER BY last_updated DESC LIMIT 200`,
-                    [userId],
+                    `SELECT * FROM items_v14 WHERE ${whereClause} ORDER BY last_updated DESC LIMIT ? OFFSET ?`,
+                    [...queryParams, perPage, offset],
                     (err, rows) => {
                         if (err) {
                             console.error('[Promotions] DB Error:', err);
@@ -1021,10 +1049,12 @@ app.get('/promotions', async (req, res) => {
                         <input 
                             type="text" 
                             id="promoSearchInput" 
+                            value="${searchQuery}"
                             placeholder="🔍 Buscar por nombre, ID o marca..." 
                             style="width: 100%; padding: 12px 40px 12px 15px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem; transition: all 0.2s;"
                             onfocus="this.style.borderColor='#3483fa'; this.style.boxShadow='0 0 0 3px rgba(52,131,250,0.1)'"
                             onblur="this.style.borderColor='#e0e0e0'; this.style.boxShadow='none'"
+                            onkeypress="if(event.key==='Enter') performSearch()"
                         />
                         <button 
                             id="clearSearchBtn" 
@@ -1034,6 +1064,27 @@ app.get('/promotions', async (req, res) => {
                         >✕</button>
                     </div>
                     <div id="searchResultsCount" style="margin-top: 8px; font-size: 0.85rem; color: #666; display: none;"></div>
+                </div>
+                
+                <!-- Pagination Controls -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <button 
+                        onclick="goToPage(${page - 1})" 
+                        ${page === 1 ? 'disabled' : ''}
+                        style="padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 6px; cursor: ${page === 1 ? 'not-allowed' : 'pointer'}; opacity: ${page === 1 ? '0.5' : '1'};"
+                    >
+                        ← Anterior
+                    </button>
+                    <span style="font-weight: 500; color: #666;">
+                        Página ${page} de ${totalPages} (${totalItems} items${searchQuery ? ` - filtrado por "${searchQuery}"` : ''})
+                    </span>
+                    <button 
+                        onclick="goToPage(${page + 1})" 
+                        ${page >= totalPages ? 'disabled' : ''}
+                        style="padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 6px; cursor: ${page >= totalPages ? 'not-allowed' : 'pointer'}; opacity: ${page >= totalPages ? '0.5' : '1'};"
+                    >
+                        Siguiente →
+                    </button>
                 </div>
                 
                 <div style="margin-bottom: 15px; font-weight: 600; color: var(--text-gray);">Campañas Disponibles:</div>
@@ -1179,75 +1230,49 @@ ${JSON.stringify(rawApiData, null, 2)}
                     if (e.key === 'Escape') closePromoModal();
                 };
 
-                // ===== SEARCH FUNCTIONALITY =====
-                let searchDebounceTimer = null;
-
-                // Filter promo cards based on search query
-                function filterPromoCards(query) {
-                    const normalized = query.toLowerCase().trim();
-                    const cards = document.querySelectorAll('.promo-card');
-                    const clearBtn = document.getElementById('clearSearchBtn');
-                    const resultsCount = document.getElementById('searchResultsCount');
-                    
-                    let visibleCount = 0;
-                    
-                    cards.forEach(card => {
-                        const name = card.dataset.name || '';
-                        const id = card.dataset.id || '';
-                        const brand = card.dataset.brand || '';
-                        
-                        const matches = !normalized || 
-                                       name.includes(normalized) || 
-                                       id.includes(normalized) || 
-                                       brand.includes(normalized);
-                        
-                        card.style.display = matches ? 'block' : 'none';
-                        if (matches) visibleCount++;
-                    });
-                    
-                    // Show/hide clear button
-                    clearBtn.style.display = normalized ? 'block' : 'none';
-                    
-                    // Show results count
-                    if (normalized) {
-                        resultsCount.style.display = 'block';
-                        resultsCount.textContent = visibleCount === 0 
-                            ? 'No se encontraron productos' 
-                            : \`Mostrando \${visibleCount} de \${cards.length} productos\`;
-                        resultsCount.style.color = visibleCount === 0 ? '#d32f2f' : '#666';
+                // ===== SEARCH & PAGINATION FUNCTIONALITY =====
+                
+                // Server-side search (reloads page with search query)
+                function performSearch() {
+                    const query = document.getElementById('promoSearchInput').value.trim();
+                    const url = new URL(window.location);
+                    if (query) {
+                        url.searchParams.set('search', query);
                     } else {
-                        resultsCount.style.display = 'none';
+                        url.searchParams.delete('search');
                     }
-                }
-
-                // Debounced search handler
-                function handlePromoSearch(event) {
-                    clearTimeout(searchDebounceTimer);
-                    searchDebounceTimer = setTimeout(() => {
-                        filterPromoCards(event.target.value);
-                    }, 300);
+                    url.searchParams.set('page', '1'); // Reset to page 1 on new search
+                    window.location.href = url.toString();
                 }
 
                 // Clear search
                 window.clearPromoSearch = function() {
-                    const input = document.getElementById('promoSearchInput');
-                    input.value = '';
-                    filterPromoCards('');
-                    input.focus();
+                    const url = new URL(window.location);
+                    url.searchParams.delete('search');
+                    url.searchParams.set('page', '1');
+                    window.location.href = url.toString();
                 };
 
-                // Initialize search on page load
+                // Navigate to page
+                window.goToPage = function(page) {
+                    if (page < 1) return;
+                    const url = new URL(window.location);
+                    url.searchParams.set('page', page);
+                    window.location.href = url.toString();
+                };
+
+                // Show/hide clear button based on search value
                 document.addEventListener('DOMContentLoaded', function() {
                     const searchInput = document.getElementById('promoSearchInput');
-                    if (searchInput) {
-                        searchInput.addEventListener('input', handlePromoSearch);
+                    const clearBtn = document.getElementById('clearSearchBtn');
+                    
+                    if (searchInput && clearBtn) {
+                        // Show clear button if there's a search value
+                        clearBtn.style.display = searchInput.value ? 'block' : 'none';
                         
-                        // Support Enter key to trigger immediate search
-                        searchInput.addEventListener('keypress', function(e) {
-                            if (e.key === 'Enter') {
-                                clearTimeout(searchDebounceTimer);
-                                filterPromoCards(this.value);
-                            }
+                        // Update clear button visibility on input
+                        searchInput.addEventListener('input', function() {
+                            clearBtn.style.display = this.value ? 'block' : 'none';
                         });
                     }
                 });
