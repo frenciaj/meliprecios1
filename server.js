@@ -517,8 +517,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.5';
-                                    const footerDescription = 'Listing Manager & Repricer - Fixed Inline Edits';
+                                    const version = 'v12.6';
+                                    const footerDescription = 'Listing Manager & Repricer - Syntax Fix';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -537,21 +537,21 @@ app.get('/listings', async (req, res) => {
 
                             // --- Price Editing ---
                             function editPrice(itemId, currentPrice) {
-                                document.querySelector(`.price - edit - container[data - item - id="${itemId}"] .price - display`).style.display = 'none';
-                                const form = document.querySelector(`.price - edit - container[data - item - id="${itemId}"] .price - edit - form`);
+                                document.querySelector('.price-edit-container[data-item-id="' + itemId + '"] .price-display').style.display = 'none';
+                                const form = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"] .price-edit-form');
                                 form.style.display = 'flex';
                                 form.querySelector('input').focus();
                             }
 
                             function cancelEdit(itemId) {
-                                document.querySelector(`.price - edit - container[data - item - id="${itemId}"] .price - display`).style.display = 'flex';
-                                document.querySelector(`.price - edit - container[data - item - id="${itemId}"] .price - edit - form`).style.display = 'none';
+                                document.querySelector('.price-edit-container[data-item-id="' + itemId + '"] .price-display').style.display = 'flex';
+                                document.querySelector('.price-edit-container[data-item-id="' + itemId + '"] .price-edit-form').style.display = 'none';
                             }
 
                             async function savePrice(itemId) {
-                                const input = document.querySelector(`.price - edit - container[data - item - id="${itemId}"] .price - input`);
+                                const input = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"] .price-input');
                                 const newPrice = input.value;
-                                const btn = document.querySelector(`.price - edit - container[data - item - id="${itemId}"] .save - price - btn`);
+                                const btn = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"] .save-price-btn');
                                 
                                 btn.disabled = true;
                                 btn.innerHTML = '...';
@@ -579,21 +579,21 @@ app.get('/listings', async (req, res) => {
 
                             // --- Quantity Editing ---
                             function editQty(itemId, currentQty) {
-                                document.querySelector(`.qty - edit - container[data - item - id="${itemId}"] .qty - display`).style.display = 'none';
-                                const form = document.querySelector(`.qty - edit - container[data - item - id="${itemId}"] .qty - edit - form`);
+                                document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"] .qty-display').style.display = 'none';
+                                const form = document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"] .qty-edit-form');
                                 form.style.display = 'flex';
                                 form.querySelector('input').focus();
                             }
 
                             function cancelQtyEdit(itemId) {
-                                document.querySelector(`.qty - edit - container[data - item - id="${itemId}"] .qty - display`).style.display = 'flex';
-                                document.querySelector(`.qty - edit - container[data - item - id="${itemId}"] .qty - edit - form`).style.display = 'none';
+                                document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"] .qty-display').style.display = 'flex';
+                                document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"] .qty-edit-form').style.display = 'none';
                             }
 
                             async function saveQty(itemId) {
-                                const input = document.querySelector(`.qty - edit - container[data - item - id="${itemId}"] .qty - input`);
+                                const input = document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"] .qty-input');
                                 const newQuantity = input.value;
-                                const btn = document.querySelector(`.qty - edit - container[data - item - id="${itemId}"] .save - qty - btn`);
+                                const btn = document.querySelector('.qty-edit-container[data-item-id="' + itemId + '"] .save-qty-btn');
 
                                 btn.disabled = true;
                                 btn.innerHTML = '...';
@@ -621,19 +621,19 @@ app.get('/listings', async (req, res) => {
 
                             // --- Promo Price Editing (Inline) ---
                             function editPromoPrice(itemId, currentPrice) {
-                                document.querySelector(`.promo - edit - container[data - item - id="${itemId}"] .promo - display`).style.display = 'none';
-                                const form = document.querySelector(`.promo - edit - container[data - item - id="${itemId}"] .promo - edit - form`);
+                                document.querySelector('.promo-edit-container[data-item-id="' + itemId + '"] .promo-display').style.display = 'none';
+                                const form = document.querySelector('.promo-edit-container[data-item-id="' + itemId + '"] .promo-edit-form');
                                 form.style.display = 'flex';
                                 form.querySelector('input').focus();
                             }
 
                             function cancelPromoEdit(itemId) {
-                                document.querySelector(`.promo - edit - container[data - item - id="${itemId}"] .promo - display`).style.display = 'block';
-                                document.querySelector(`.promo - edit - container[data - item - id="${itemId}"] .promo - edit - form`).style.display = 'none';
+                                document.querySelector('.promo-edit-container[data-item-id="' + itemId + '"] .promo-display').style.display = 'block';
+                                document.querySelector('.promo-edit-container[data-item-id="' + itemId + '"] .promo-edit-form').style.display = 'none';
                             }
 
                             async function savePromoPrice(itemId) {
-                                const container = document.querySelector(`.promo - edit - container[data - item - id="${itemId}"]`);
+                                const container = document.querySelector('.promo-edit-container[data-item-id="' + itemId + '"]');
                                 const input = container.querySelector('.promo-input');
                                 const promoId = container.dataset.promoId;
                                 const promoType = container.dataset.promoType;
