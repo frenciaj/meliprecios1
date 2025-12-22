@@ -138,7 +138,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.21 - DB & Process Guard - ${new Date().toISOString()}
+        v12.22 - Scope Fix & DB Isolation - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -528,8 +528,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.21';
-                                    const footerDescription = 'Listing Manager & Repricer - DB & Process Guard';
+                                    const version = 'v12.22';
+                                    const footerDescription = 'Listing Manager & Repricer - Scope Fix & DB Isolation';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -733,17 +733,19 @@ app.post('/update-price', async (req, res) => {
         // 2. Update API with explicit timeout
         await axios.put(`https://api.mercadolibre.com/items/${itemId}`, { price: parseFloat(newPrice) }, {
             headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            timeout: 10000 // 10s timeout
+            timeout: 5000 // Reduced to 5s to catch latency early
         });
         console.log(`[Price Update] API Success for ${itemId}`);
 
-        // 3. Update Local DB
+        // 3. Update Local DB (DISABLED TO ISOLATE CRASH)
+        /*
         db.run(`UPDATE items_v14 SET price = ?, last_updated = ? WHERE id = ? AND user_id = ?`,
             [parseFloat(newPrice), new Date().toISOString(), itemId, userId],
             (err) => {
                 if (err) console.error('Local DB Update Error:', err);
             }
         );
+        */
 
         return res.json({ success: true });
     } catch (error) {
@@ -1105,11 +1107,13 @@ app.post('/apply-promotion', async (req, res) => {
         });
     };
 
+    // Declare at function scope so catch block can access them
+    let authoritativeType = promotion_type;
+    let availablePromotions = [];
+
     try {
         // 1. Fetch available promotions for this item to get authoritative Type
         console.log(`[Promo] Validating data for Item: ${item_id}, Promo ID: ${promotion_id}`);
-        let authoritativeType = promotion_type;
-        let availablePromotions = [];
 
         try {
             const infoRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`, {
