@@ -128,7 +128,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.18 - Promo Mapping Fix - ${new Date().toISOString()}
+        v12.19 - Price Update Diagnostics - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -518,8 +518,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.18';
-                                    const footerDescription = 'Listing Manager & Repricer - Promo Mapping Fix';
+                                    const version = 'v12.19';
+                                    const footerDescription = 'Listing Manager & Repricer - Price Update Diagnostics';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -558,11 +558,22 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '...';
 
                                 try {
+                                    const controller = new AbortController();
+                                    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
                                     const res = await fetch('/update-price', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ itemId, newPrice })
+                                        body: JSON.stringify({ itemId, newPrice }),
+                                        signal: controller.signal
                                     });
+                                    clearTimeout(timeoutId);
+
+                                    const contentType = res.headers.get('content-type');
+                                    if (contentType && contentType.includes('text/html')) {
+                                        throw new Error('Server Crash (HTML Response)');
+                                    }
+
                                     const data = await res.json();
                                     if (data.success) {
                                         location.reload();
@@ -572,7 +583,11 @@ app.get('/listings', async (req, res) => {
                                         btn.innerHTML = '✓';
                                     }
                                 } catch (e) {
-                                    alert('Error: ' + e.message);
+                                    if (e.name === 'AbortError') {
+                                        alert('Error: Request timed out. Please try again.');
+                                    } else {
+                                        alert('Error: ' + e.message);
+                                    }
                                     btn.disabled = false;
                                     btn.innerHTML = '✓';
                                 }
