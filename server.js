@@ -127,7 +127,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.2 - Accuracy Update: Correct Net Income & Styling - ${new Date().toISOString()}
+        v12.3 - Buy Box Update: "Perdiendo" Alert 💀 - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -350,6 +350,12 @@ app.get('/listings', async (req, res) => {
                         else if (s === 'sharing_first_place') { buyBoxStatus = '🏆 Sharing 1st'; buyBoxClass = 'status-winning'; }
                         else if (s === 'losing') { buyBoxStatus = 'Losing'; buyBoxClass = 'status-losing'; }
 
+                        // New Condition: No status but Price to Win exists -> Perdiendo
+                        if (!s && bbData.priceToWin) {
+                            buyBoxStatus = '💀 Perdiendo';
+                            buyBoxClass = 'status-losing';
+                        }
+
                         if (bbData.priceToWin) priceToWin = `$ ${bbData.priceToWin.toLocaleString('es-AR')}`;
                     }
 
@@ -509,8 +515,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.2';
-                                    const footerDescription = 'Listing Manager & Repricer - Accuracy Update';
+                                    const version = 'v12.3';
+                                    const footerDescription = 'Listing Manager & Repricer - Perdiendo Alert';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
