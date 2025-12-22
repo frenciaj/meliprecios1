@@ -138,7 +138,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.24 - Sync Promo Data - ${new Date().toISOString()}
+        v12.25 - PUT Method for Promos - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -528,8 +528,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.24';
-                                    const footerDescription = 'Listing Manager & Repricer - Sync Promo Data';
+                                    const version = 'v12.25';
+                                    const footerDescription = 'Listing Manager & Repricer - PUT Method for Promos';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1096,7 +1096,7 @@ app.post('/apply-promotion', async (req, res) => {
     const { item_id, promotion_id, promotion_type, deal_price } = req.body;
 
     const makeRequest = async (pType) => {
-        return axios.post(`https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`, {
+        return axios.put(`https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`, {
             promotion_id,
             promotion_type: pType,
             deal_price
