@@ -139,7 +139,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.29 - Aesthetic Polish - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.30 - Promo Search - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -529,8 +529,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.29';
-                                    const footerDescription = 'Listing Manager & Repricer - Aesthetic Polish';
+                                    const version = 'v12.30';
+                                    const footerDescription = 'Listing Manager & Repricer - Promo Search';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -937,7 +937,10 @@ app.get('/promotions', async (req, res) => {
             }).replace(/"/g, '&quot;');
 
             return `
-                <div class="promo-card">
+                <div class="promo-card" 
+                     data-name="${item.title.toLowerCase()}" 
+                     data-id="${item.id}" 
+                     data-brand="${brand.toLowerCase()}">
                     <div class="promo-header">
                         <img src="${item.thumbnail}" alt="" class="promo-img">
                         <div class="promo-info">
@@ -968,6 +971,27 @@ app.get('/promotions', async (req, res) => {
         const content = `
             <div class="card">
                 <h2 style="margin-bottom: 20px;">Central de Promociones</h2>
+                
+                <!-- Search Bar -->
+                <div style="margin-bottom: 25px;">
+                    <div style="position: relative; max-width: 500px;">
+                        <input 
+                            type="text" 
+                            id="promoSearchInput" 
+                            placeholder="🔍 Buscar por nombre, ID o marca..." 
+                            style="width: 100%; padding: 12px 40px 12px 15px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem; transition: all 0.2s;"
+                            onfocus="this.style.borderColor='#3483fa'; this.style.boxShadow='0 0 0 3px rgba(52,131,250,0.1)'"
+                            onblur="this.style.borderColor='#e0e0e0'; this.style.boxShadow='none'"
+                        />
+                        <button 
+                            id="clearSearchBtn" 
+                            onclick="clearPromoSearch()" 
+                            style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #999; cursor: pointer; font-size: 1.2rem; padding: 5px; display: none;"
+                            title="Limpiar búsqueda"
+                        >✕</button>
+                    </div>
+                    <div id="searchResultsCount" style="margin-top: 8px; font-size: 0.85rem; color: #666; display: none;"></div>
+                </div>
                 
                 <div style="margin-bottom: 15px; font-weight: 600; color: var(--text-gray);">Campañas Disponibles:</div>
                 <div class="campaigns-panel">
@@ -1111,6 +1135,79 @@ ${JSON.stringify(rawApiData, null, 2)}
                 window.onkeydown = function(e) {
                     if (e.key === 'Escape') closePromoModal();
                 };
+
+                // ===== SEARCH FUNCTIONALITY =====
+                let searchDebounceTimer = null;
+
+                // Filter promo cards based on search query
+                function filterPromoCards(query) {
+                    const normalized = query.toLowerCase().trim();
+                    const cards = document.querySelectorAll('.promo-card');
+                    const clearBtn = document.getElementById('clearSearchBtn');
+                    const resultsCount = document.getElementById('searchResultsCount');
+                    
+                    let visibleCount = 0;
+                    
+                    cards.forEach(card => {
+                        const name = card.dataset.name || '';
+                        const id = card.dataset.id || '';
+                        const brand = card.dataset.brand || '';
+                        
+                        const matches = !normalized || 
+                                       name.includes(normalized) || 
+                                       id.includes(normalized) || 
+                                       brand.includes(normalized);
+                        
+                        card.style.display = matches ? 'block' : 'none';
+                        if (matches) visibleCount++;
+                    });
+                    
+                    // Show/hide clear button
+                    clearBtn.style.display = normalized ? 'block' : 'none';
+                    
+                    // Show results count
+                    if (normalized) {
+                        resultsCount.style.display = 'block';
+                        resultsCount.textContent = visibleCount === 0 
+                            ? 'No se encontraron productos' 
+                            : \`Mostrando \${visibleCount} de \${cards.length} productos\`;
+                        resultsCount.style.color = visibleCount === 0 ? '#d32f2f' : '#666';
+                    } else {
+                        resultsCount.style.display = 'none';
+                    }
+                }
+
+                // Debounced search handler
+                function handlePromoSearch(event) {
+                    clearTimeout(searchDebounceTimer);
+                    searchDebounceTimer = setTimeout(() => {
+                        filterPromoCards(event.target.value);
+                    }, 300);
+                }
+
+                // Clear search
+                window.clearPromoSearch = function() {
+                    const input = document.getElementById('promoSearchInput');
+                    input.value = '';
+                    filterPromoCards('');
+                    input.focus();
+                };
+
+                // Initialize search on page load
+                document.addEventListener('DOMContentLoaded', function() {
+                    const searchInput = document.getElementById('promoSearchInput');
+                    if (searchInput) {
+                        searchInput.addEventListener('input', handlePromoSearch);
+                        
+                        // Support Enter key to trigger immediate search
+                        searchInput.addEventListener('keypress', function(e) {
+                            if (e.key === 'Enter') {
+                                clearTimeout(searchDebounceTimer);
+                                filterPromoCards(this.value);
+                            }
+                        });
+                    }
+                });
             </script>
         `;
 
