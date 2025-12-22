@@ -128,7 +128,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.8 - Spanish Search & Brand UI - ${new Date().toISOString()}
+        v12.10 - Fixed Sync Limit (Scan) - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -517,8 +517,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.8';
-                                    const footerDescription = 'Listing Manager & Repricer - Spanish Search';
+                                    const version = 'v12.10';
+                                    const footerDescription = 'Listing Manager & Repricer - Fixed Sync (Scan)';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -654,10 +654,10 @@ app.get('/listings', async (req, res) => {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({ 
-                                            itemId: itemId, 
-                                            promotionId: promoId, 
-                                            promotionType: promoType, 
-                                            dealPrice: newPrice 
+                                            item_id: itemId, 
+                                            promotion_id: promoId, 
+                                            promotion_type: promoType, 
+                                            deal_price: newPrice 
                                         })
                                     });
                                     
@@ -1100,26 +1100,34 @@ app.post('/sync-listings', async (req, res) => {
         });
         const userId = userRes.data.id;
 
-        // 1. Fetch all item IDs
+        // 1. Fetch all item IDs using scan (to support > 1000 items)
         let itemIds = [];
-        let offset = 0;
-        let total = 1;
-        while (itemIds.length < total) {
+        let scrollId = null;
+        let hasMore = true;
+
+        while (hasMore) {
+            const params = {
+                status: 'active,paused,closed',
+                search_type: 'scan',
+                limit: 100
+            };
+            if (scrollId) params.scroll_id = scrollId;
+
             const searchRes = await axios.get(`https://api.mercadolibre.com/users/${userId}/items/search`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
-                params: {
-                    status: 'active,paused,closed',
-                    limit: 100,
-                    offset: offset
-                }
+                params: params
             });
-            const results = searchRes.data.results || [];
-            itemIds = itemIds.concat(results);
-            total = searchRes.data.paging.total;
-            offset += results.length;
 
-            // Limit to prevents infinite loops or excessive API usage (e.g., max 3000 items for now)
-            if (results.length === 0 || offset > 10000) break;
+            const results = searchRes.data.results || [];
+            if (results.length > 0) {
+                itemIds = itemIds.concat(results);
+                scrollId = searchRes.data.scroll_id;
+            } else {
+                hasMore = false;
+            }
+
+            // Safety break
+            if (itemIds.length > 50000) break;
         }
 
         console.log(`[Sync] Found ${itemIds.length} items to sync.`);
