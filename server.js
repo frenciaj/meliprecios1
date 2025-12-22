@@ -128,7 +128,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.13 - Robust Promo Validation - ${new Date().toISOString()}
+        v12.14 - Alphabetical Sort - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -282,7 +282,8 @@ app.get('/listings', async (req, res) => {
             const totalPages = Math.ceil(totalItems / limit);
 
             // Get Items
-            sql += ` ORDER BY last_updated DESC LIMIT ? OFFSET ?`;
+            // Default sort: Alphabetical by Name (Title)
+            sql += ` ORDER BY title ASC LIMIT ? OFFSET ?`;
             params.push(limit, offset);
 
             db.all(sql, params, async (err, rows) => {
@@ -517,8 +518,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.13';
-                                    const footerDescription = 'Listing Manager & Repricer - Robust Promo Validation';
+                                    const version = 'v12.14';
+                                    const footerDescription = 'Listing Manager & Repricer - Alphabetical Sort';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
