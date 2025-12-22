@@ -138,7 +138,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.25 - PUT Method for Promos - ${new Date().toISOString()}
+        v12.26 - Await DB Updates - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -528,8 +528,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.25';
-                                    const footerDescription = 'Listing Manager & Repricer - PUT Method for Promos';
+                                    const version = 'v12.26';
+                                    const footerDescription = 'Listing Manager & Repricer - Await DB Updates';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -737,13 +737,21 @@ app.post('/update-price', async (req, res) => {
         });
         console.log(`[Price Update] API Success for ${itemId}`);
 
-        // 3. Update Local DB
-        db.run(`UPDATE items_v14 SET price = ?, last_updated = ? WHERE id = ? AND user_id = ?`,
-            [parseFloat(newPrice), new Date().toISOString(), itemId, userId],
-            (err) => {
-                if (err) console.error('Local DB Update Error:', err);
-            }
-        );
+        // 3. Update Local DB (wrapped in Promise to ensure completion)
+        await new Promise((resolve, reject) => {
+            db.run(`UPDATE items_v14 SET price = ?, last_updated = ? WHERE id = ? AND user_id = ?`,
+                [parseFloat(newPrice), new Date().toISOString(), itemId, userId],
+                (err) => {
+                    if (err) {
+                        console.error('Local DB Update Error:', err);
+                        reject(err);
+                    } else {
+                        console.log(`[Price Update] DB Updated for ${itemId}`);
+                        resolve();
+                    }
+                }
+            );
+        });
 
         return res.json({ success: true });
     } catch (error) {
