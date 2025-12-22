@@ -128,7 +128,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.12 - Promo Retry Fix - ${new Date().toISOString()}
+        v12.13 - Robust Promo Validation - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -517,8 +517,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.12';
-                                    const footerDescription = 'Listing Manager & Repricer - Promo Retry Fix';
+                                    const version = 'v12.13';
+                                    const footerDescription = 'Listing Manager & Repricer - Robust Promo Validation';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1076,18 +1076,41 @@ app.post('/apply-promotion', async (req, res) => {
     };
 
     try {
+        // 1. Fetch available promotions for this item to get authoritative Type
+        console.log(`[Promo] Validating data for Item: ${item_id}, Promo ID: ${promotion_id}`);
+        let authoritativeType = promotion_type;
+
         try {
-            console.log(`[Promo] Attempt 1: ${promotion_type}`);
-            await makeRequest(promotion_type);
+            const infoRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+
+            // Find the matching promotion
+            const matchingPromo = infoRes.data?.find(p => p.id === promotion_id);
+            if (matchingPromo) {
+                console.log(`[Promo] Found authoritative match. Type: ${authoritativeType} -> ${matchingPromo.type}`);
+                authoritativeType = matchingPromo.type;
+            } else {
+                console.warn(`[Promo] Warning: Promo ID ${promotion_id} not found in live item data. Using provided type.`);
+            }
+        } catch (fetchErr) {
+            console.error('[Promo] Failed to fetch live item info:', fetchErr.message);
+            // Continue with provided type as fallback
+        }
+
+        // 2. Make the request with authoritative type
+        try {
+            console.log(`[Promo] Sending Update. Type: ${authoritativeType}`);
+            await makeRequest(authoritativeType);
         } catch (err1) {
             console.error('[Promo] Attempt 1 Failed:', err1.response?.data || err1.message);
 
-            // Attempt 2: Always try uppercase if first attempt failed and it wasn't already uppercase
-            if (promotion_type && promotion_type !== promotion_type.toUpperCase()) {
-                console.log(`[Promo] Retrying with uppercase type: ${promotion_type.toUpperCase()}`);
-                await makeRequest(promotion_type.toUpperCase());
+            // Attempt 2: Retry with Uppercase if failed (Fallback)
+            if (authoritativeType && authoritativeType !== authoritativeType.toUpperCase()) {
+                console.log(`[Promo] Retrying with uppercase type: ${authoritativeType.toUpperCase()}`);
+                await makeRequest(authoritativeType.toUpperCase());
             } else {
-                throw err1; // It was already uppercase or we shouldn't retry
+                throw err1;
             }
         }
 
