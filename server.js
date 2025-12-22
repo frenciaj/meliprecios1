@@ -128,7 +128,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.10 - Fixed Sync Limit (Scan) - ${new Date().toISOString()}
+        v12.11 - Promo Type Fix - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -517,8 +517,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.10';
-                                    const footerDescription = 'Listing Manager & Repricer - Fixed Sync (Scan)';
+                                    const version = 'v12.11';
+                                    const footerDescription = 'Listing Manager & Repricer - Promo Type Fix';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1065,14 +1065,30 @@ app.post('/apply-promotion', async (req, res) => {
 
     const { item_id, promotion_id, promotion_type, deal_price } = req.body;
 
-    try {
-        await axios.post(`https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`, {
+    const makeRequest = async (pType) => {
+        return axios.post(`https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`, {
             promotion_id,
-            promotion_type,
+            promotion_type: pType,
             deal_price
         }, {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
+    };
+
+    try {
+        try {
+            // Attempt 1: As provided
+            await makeRequest(promotion_type);
+        } catch (err1) {
+            // Attempt 2: Uppercase if "Invalid promotion type" or similar
+            if (err1.response?.data?.error === 'Invalid promotion type' ||
+                err1.response?.data?.message === 'Invalid promotion type') {
+                console.log(`[Promo] Retrying with uppercase type: ${promotion_type.toUpperCase()}`);
+                await makeRequest(promotion_type.toUpperCase());
+            } else {
+                throw err1; // Re-throw if it's a different error
+            }
+        }
 
         // Update DB immediately
         db.run(`UPDATE items SET sale_price_amount = ?, last_updated = ? WHERE id = ?`,
