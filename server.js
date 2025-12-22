@@ -13,7 +13,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     else console.log(`Connected to SQLite database at ${dbPath}`);
 });
 
-db.run(`CREATE TABLE IF NOT EXISTS items_v12 (
+db.run(`CREATE TABLE IF NOT EXISTS items_v13 (
     id TEXT,
     user_id TEXT,
     title TEXT,
@@ -31,6 +31,7 @@ db.run(`CREATE TABLE IF NOT EXISTS items_v12 (
     promotion_type TEXT,
     price_to_win REAL,
     last_updated DATETIME,
+    free_shipping INTEGER,
     PRIMARY KEY (id, user_id)
 )`);
 
@@ -126,7 +127,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.1 - UI Improvements: "Mis Artículos" & User Badge - ${new Date().toISOString()}
+        v12.2 - Accuracy Update: Correct Net Income & Styling - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -262,7 +263,7 @@ app.get('/listings', async (req, res) => {
         const statusFilter = req.query.status || 'all';
 
         // Build SQL Query
-        let sql = `SELECT * FROM items_v12 WHERE user_id = ? AND (title LIKE ? OR id LIKE ?)`;
+        let sql = `SELECT * FROM items_v13 WHERE user_id = ? AND (title LIKE ? OR id LIKE ?)`;
         const params = [userId, search, search];
 
         if (statusFilter !== 'all') {
@@ -354,10 +355,15 @@ app.get('/listings', async (req, res) => {
 
                     // Fees
                     const fees = feeData.get(item.id) || { saleFee: 0 };
-                    const shipFee = Number(shippingData.get(item.id)) || 0;
+                    // Only deduct shipping if Free Shipping is ACTIVE (1)
+                    // If free_shipping is 0 (Buyer pays), then cost to seller is 0.
+                    const rawShipFee = Number(shippingData.get(item.id)) || 0;
+                    const shipFee = (item.free_shipping === 1) ? rawShipFee : 0;
+
                     const saleFee = Number(fees.saleFee) || 0;
                     const netIncome = currentPrice - saleFee - shipFee;
                     const netIncomeFormatted = `$ ${isFinite(netIncome) ? netIncome.toLocaleString('es-AR') : '---'}`;
+                    const netIncomeColor = netIncome < 0 ? '#d32f2f' : '#00a650';
 
                     return `
                         <tr>
@@ -395,14 +401,15 @@ app.get('/listings', async (req, res) => {
                                     </div>
                                 ` : '<span style="color: #ccc;">---</span>'}
                             </td>
-                            <td class="net-income-cell" style="font-weight: 600; color: #00a650;">
+                            <td class="net-income-cell" style="font-weight: 600; color: ${netIncomeColor};">
                                 ${netIncomeFormatted}
                                 <div class="fee-tooltip">
                                      <div class="tooltip-title">Detalle de Costos</div>
                                      <div class="tooltip-row"><span class="tooltip-label">Venta:</span><span class="tooltip-value">$ ${currentPrice.toLocaleString('es-AR')}</span></div>
                                      <div class="tooltip-row"><span class="tooltip-label">Cargos:</span><span class="tooltip-value minus">-$ ${saleFee.toLocaleString('es-AR')}</span></div>
                                      <div class="tooltip-row"><span class="tooltip-label">Envío:</span><span class="tooltip-value minus">-$ ${shipFee.toLocaleString('es-AR')}</span></div>
-                                     <div class="tooltip-row total"><span class="tooltip-label">Recibís:</span><span class="tooltip-value">${netIncomeFormatted}</span></div>
+                                     <div class="tooltip-row total"><span class="tooltip-label">Recibís:</span><span class="tooltip-value" style="color: ${netIncomeColor};">${netIncomeFormatted}</span></div>
+                                     ${item.free_shipping === 0 ? '<div class="tooltip-row" style="margin-top:5px; font-size:0.7rem; color:#666;">* Envío a cargo del comprador</div>' : ''}
                                 </div>
                             </td>
                             <td>${priceToWin}</td>
@@ -502,8 +509,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.1';
-                                    const footerDescription = 'Listing Manager & Repricer - UI Polish';
+                                    const version = 'v12.2';
+                                    const footerDescription = 'Listing Manager & Repricer - Accuracy Update';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -948,7 +955,7 @@ app.post('/sync-listings', async (req, res) => {
 
         for (const batch of batches) {
             // A. Fetch Item Details
-            const itemsRes = await axios.get(`https://api.mercadolibre.com/items?ids=${batch.join(',')}&attributes=id,title,thumbnail,price,currency_id,available_quantity,original_price,permalink,status,listing_type_id`, {
+            const itemsRes = await axios.get(`https://api.mercadolibre.com/items?ids=${batch.join(',')}&attributes=id,title,thumbnail,price,currency_id,available_quantity,original_price,permalink,status,listing_type_id,shipping`, {
                 headers: { Authorization: `Bearer ${accessToken}` }
             });
 
@@ -974,9 +981,8 @@ app.post('/sync-listings', async (req, res) => {
                     }
                 } catch (e) { }
 
-                // C. Fetch Price To Win (Parallel) - Optional, maybe skip for speed? 
-                // Let's skip for now to speed up sync, or do it? User wants "net income", which needs fees.
-                // We'll trust the main item price for now and add fees later if needed or in real-time view.
+                // C. Fetch Price To Win (Parallel) - Optional
+                const freeShipping = item.shipping?.free_shipping ? 1 : 0;
 
                 return {
                     id: item.id,
@@ -994,19 +1000,20 @@ app.post('/sync-listings', async (req, res) => {
                     promotion_id: promoId,
                     promotion_type: promoType,
                     price_to_win: 0, // Placeholder
-                    last_updated: new Date().toISOString()
+                    last_updated: new Date().toISOString(),
+                    free_shipping: freeShipping
                 };
             });
 
             const processedItems = (await Promise.all(strategies)).filter(i => i !== null);
 
             // D. Upsert to DB with user_id
-            const stmt = db.prepare(`INSERT OR REPLACE INTO items_v12 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            const stmt = db.prepare(`INSERT OR REPLACE INTO items_v13 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
             db.serialize(() => {
                 db.run("BEGIN TRANSACTION");
                 processedItems.forEach(item => {
-                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated);
+                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping);
                 });
                 db.run("COMMIT");
             });
