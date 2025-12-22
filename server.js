@@ -139,7 +139,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.32 - DB Promociones - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.33 - Fix Promo API - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -529,8 +529,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.32';
-                                    const footerDescription = 'Listing Manager & Repricer - DB Promociones';
+                                    const version = 'v12.33';
+                                    const footerDescription = 'Listing Manager & Repricer - Fix Promo API';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -879,47 +879,44 @@ app.get('/promotions', async (req, res) => {
 
             console.log(`[Promotions] Loaded ${dbItems.length} items from database`);
 
-            // 2. Fetch promotion info from API (only for selected campaign)
+            // 2. Fetch promotion info from API (per item, batched)
             const promoInfoMap = {};
 
-            if (activeCampaignId) {
-                const fetchByStatus = async (status) => {
+            if (activeCampaignId && dbItems.length > 0) {
+                console.log(`[Promotions] Fetching promo data for ${dbItems.length} items...`);
+
+                // Batch fetch promo info for all items (limit to avoid timeout)
+                const itemsToFetch = dbItems.slice(0, 100); // Process first 100 items
+
+                for (const item of itemsToFetch) {
                     try {
-                        const res = await axios.get(`https://api.mercadolibre.com/seller-promotions/${activeCampaignId}/items`, {
-                            headers: { Authorization: `Bearer ${accessToken}` },
-                            params: { promotion_type: activeCampaignType, status, app_version: 'v2' }
+                        const res = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${item.id}?app_version=v2`, {
+                            headers: { Authorization: `Bearer ${accessToken}` }
                         });
-                        rawApiData[status] = res.data;
-                        return res.data.results || res.data.items || [];
+
+                        const promos = res.data || [];
+
+                        // Find matching promotion for selected campaign
+                        const matchingPromo = promos.find(p => p.id === activeCampaignId);
+
+                        if (matchingPromo) {
+                            promoInfoMap[item.id] = {
+                                status: matchingPromo.status,
+                                price: matchingPromo.price,
+                                min: matchingPromo.min_discounted_price,
+                                max: matchingPromo.max_discounted_price,
+                                suggested: matchingPromo.suggested_discounted_price,
+                                original: matchingPromo.original_price
+                            };
+                            rawApiData[`item_${item.id}`] = promos; // Store for debug
+                        }
                     } catch (e) {
-                        console.error(`[Promotions] API Error for ${status}:`, e.response?.data || e.message);
-                        rawApiData[status + '_error'] = e.response?.data || e.message;
-                        return [];
+                        // Silently skip items that error (likely not eligible)
+                        if (e.response?.status !== 404) {
+                            console.error(`[Promotions] Error fetching promo for ${item.id}:`, e.message);
+                        }
                     }
-                };
-
-                const [cand, start, invit, pend] = await Promise.all([
-                    fetchByStatus('candidate'),
-                    fetchByStatus('started'),
-                    fetchByStatus('invitation'),
-                    fetchByStatus('pending')
-                ]);
-
-                const allItemsRaw = [...cand, ...start, ...invit, ...pend];
-
-                // Create lookup map for promo status and price
-                allItemsRaw.forEach(r => {
-                    if (r.id) {
-                        promoInfoMap[r.id] = {
-                            status: r.status,
-                            price: r.price,
-                            min: r.min_discounted_price,
-                            max: r.max_discounted_price,
-                            suggested: r.suggested_discounted_price,
-                            original: r.original_price
-                        };
-                    }
-                });
+                }
 
                 console.log(`[Promotions] Found ${Object.keys(promoInfoMap).length} items with promo data for campaign ${activeCampaignId}`);
             }
