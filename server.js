@@ -128,7 +128,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.11 - Promo Type Fix - ${new Date().toISOString()}
+        v12.12 - Promo Retry Fix - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -517,8 +517,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.11';
-                                    const footerDescription = 'Listing Manager & Repricer - Promo Type Fix';
+                                    const version = 'v12.12';
+                                    const footerDescription = 'Listing Manager & Repricer - Promo Retry Fix';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1077,16 +1077,17 @@ app.post('/apply-promotion', async (req, res) => {
 
     try {
         try {
-            // Attempt 1: As provided
+            console.log(`[Promo] Attempt 1: ${promotion_type}`);
             await makeRequest(promotion_type);
         } catch (err1) {
-            // Attempt 2: Uppercase if "Invalid promotion type" or similar
-            if (err1.response?.data?.error === 'Invalid promotion type' ||
-                err1.response?.data?.message === 'Invalid promotion type') {
+            console.error('[Promo] Attempt 1 Failed:', err1.response?.data || err1.message);
+
+            // Attempt 2: Always try uppercase if first attempt failed and it wasn't already uppercase
+            if (promotion_type && promotion_type !== promotion_type.toUpperCase()) {
                 console.log(`[Promo] Retrying with uppercase type: ${promotion_type.toUpperCase()}`);
                 await makeRequest(promotion_type.toUpperCase());
             } else {
-                throw err1; // Re-throw if it's a different error
+                throw err1; // It was already uppercase or we shouldn't retry
             }
         }
 
