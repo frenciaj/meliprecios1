@@ -13,7 +13,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     else console.log(`Connected to SQLite database at ${dbPath}`);
 });
 
-db.run(`CREATE TABLE IF NOT EXISTS items_v13 (
+db.run(`CREATE TABLE IF NOT EXISTS items_v14 (
     id TEXT,
     user_id TEXT,
     title TEXT,
@@ -32,6 +32,7 @@ db.run(`CREATE TABLE IF NOT EXISTS items_v13 (
     price_to_win REAL,
     last_updated DATETIME,
     free_shipping INTEGER,
+    brand TEXT,
     PRIMARY KEY (id, user_id)
 )`);
 
@@ -127,7 +128,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.3 - Buy Box Update: "Perdiendo" Alert 💀 - ${new Date().toISOString()}
+        v12.4 - Brand Restoration: Field & Search - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -263,8 +264,8 @@ app.get('/listings', async (req, res) => {
         const statusFilter = req.query.status || 'all';
 
         // Build SQL Query
-        let sql = `SELECT * FROM items_v13 WHERE user_id = ? AND (title LIKE ? OR id LIKE ?)`;
-        const params = [userId, search, search];
+        let sql = `SELECT * FROM items_v14 WHERE user_id = ? AND (title LIKE ? OR id LIKE ? OR brand LIKE ?)`;
+        const params = [userId, search, search, search];
 
         if (statusFilter !== 'all') {
             sql += ` AND status = ?`;
@@ -377,6 +378,7 @@ app.get('/listings', async (req, res) => {
                             <td>
                                 <div style="font-weight: 500;">${item.title}</div>
                                 <div style="font-size: 0.8rem; color: #999;">ID: ${item.id}</div>
+                                <div style="font-size: 0.8rem; color: #666; margin-top: 4px;">${item.brand ? `Marca: <strong>${item.brand}</strong>` : ''}</div>
                             </td>
                             <td>
                                 <div class="price-edit-container" data-item-id="${item.id}">
@@ -515,8 +517,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.3';
-                                    const footerDescription = 'Listing Manager & Repricer - Perdiendo Alert';
+                                    const version = 'v12.4';
+                                    const footerDescription = 'Listing Manager & Repricer - Brand Field Restored';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -960,8 +962,8 @@ app.post('/sync-listings', async (req, res) => {
         let processedCount = 0;
 
         for (const batch of batches) {
-            // A. Fetch Item Details
-            const itemsRes = await axios.get(`https://api.mercadolibre.com/items?ids=${batch.join(',')}&attributes=id,title,thumbnail,price,currency_id,available_quantity,original_price,permalink,status,listing_type_id,shipping`, {
+            // A. Fetch Item Details including Attributes for Brand
+            const itemsRes = await axios.get(`https://api.mercadolibre.com/items?ids=${batch.join(',')}&attributes=id,title,thumbnail,price,currency_id,available_quantity,original_price,permalink,status,listing_type_id,shipping,attributes`, {
                 headers: { Authorization: `Bearer ${accessToken}` }
             });
 
@@ -987,8 +989,9 @@ app.post('/sync-listings', async (req, res) => {
                     }
                 } catch (e) { }
 
-                // C. Fetch Price To Win (Parallel) - Optional
+                // C. Extra Data
                 const freeShipping = item.shipping?.free_shipping ? 1 : 0;
+                const brandAttr = item.attributes?.find(a => a.id === 'BRAND')?.value_name || '';
 
                 return {
                     id: item.id,
@@ -1007,19 +1010,20 @@ app.post('/sync-listings', async (req, res) => {
                     promotion_type: promoType,
                     price_to_win: 0, // Placeholder
                     last_updated: new Date().toISOString(),
-                    free_shipping: freeShipping
+                    free_shipping: freeShipping,
+                    brand: brandAttr
                 };
             });
 
             const processedItems = (await Promise.all(strategies)).filter(i => i !== null);
 
             // D. Upsert to DB with user_id
-            const stmt = db.prepare(`INSERT OR REPLACE INTO items_v13 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            const stmt = db.prepare(`INSERT OR REPLACE INTO items_v14 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping, brand) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
             db.serialize(() => {
                 db.run("BEGIN TRANSACTION");
                 processedItems.forEach(item => {
-                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping);
+                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping, item.brand);
                 });
                 db.run("COMMIT");
             });
