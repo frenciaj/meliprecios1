@@ -128,7 +128,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.15 - Promo Debug Limits - ${new Date().toISOString()}
+        v12.18 - Promo Mapping Fix - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -518,8 +518,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.15';
-                                    const footerDescription = 'Listing Manager & Repricer - Promo Debug Limits';
+                                    const version = 'v12.18';
+                                    const footerDescription = 'Listing Manager & Repricer - Promo Mapping Fix';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1080,14 +1080,16 @@ app.post('/apply-promotion', async (req, res) => {
         // 1. Fetch available promotions for this item to get authoritative Type
         console.log(`[Promo] Validating data for Item: ${item_id}, Promo ID: ${promotion_id}`);
         let authoritativeType = promotion_type;
+        let availablePromotions = [];
 
         try {
             const infoRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`, {
                 headers: { Authorization: `Bearer ${accessToken}` }
             });
+            availablePromotions = infoRes.data || [];
 
             // Find the matching promotion
-            const matchingPromo = infoRes.data?.find(p => p.id === promotion_id);
+            const matchingPromo = availablePromotions.find(p => p.id === promotion_id);
             if (matchingPromo) {
                 console.log(`[Promo] Found authoritative match. Type: ${authoritativeType} -> ${matchingPromo.type}`);
                 authoritativeType = matchingPromo.type;
@@ -1098,6 +1100,9 @@ app.post('/apply-promotion', async (req, res) => {
             console.error('[Promo] Failed to fetch live item info:', fetchErr.message);
             // Continue with provided type as fallback
         }
+
+        // HEURISTIC FIX: Map generic statuses to API Types
+        if (authoritativeType === 'campaign') authoritativeType = 'MARKETPLACE_CAMPAIGN';
 
         // 2. Make the request with authoritative type
         let lastError;
@@ -1134,6 +1139,8 @@ app.post('/apply-promotion', async (req, res) => {
         const debugInfo = {
             message: error.response?.data?.message || error.message,
             tried_type: promotion_type,
+            guessed_type: authoritativeType,
+            available_promos: availablePromotions,
             api_error: error.response?.data
         };
         console.error('Apply Promo Final Error:', JSON.stringify(debugInfo));
