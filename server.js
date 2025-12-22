@@ -139,7 +139,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.34 - Pagination - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.35 - Fix Scope - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -529,8 +529,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.34';
-                                    const footerDescription = 'Listing Manager & Repricer - Pagination';
+                                    const version = 'v12.35';
+                                    const footerDescription = 'Listing Manager & Repricer - Fix Scope';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -841,6 +841,13 @@ app.get('/promotions', async (req, res) => {
         let activeCampaignType = req.query.type || (campaigns.length > 0 ? campaigns[0].type : null);
 
         let rawApiData = {};
+
+        // Pagination and search setup (moved outside if block for scope)
+        const page = parseInt(req.query.page) || 1;
+        const perPage = 50;
+        const offset = (page - 1) * perPage;
+        const searchQuery = req.query.search || '';
+
         if (activeCampaignId) {
             console.log(`[Promotions] Fetching items for ID: ${activeCampaignId}, Type: ${activeCampaignType}`);
 
@@ -860,12 +867,6 @@ app.get('/promotions', async (req, res) => {
             };
 
             // ===== NEW APPROACH: Load from DB, then enrich with promo data =====
-
-            // Pagination and search setup
-            const page = parseInt(req.query.page) || 1;
-            const perPage = 50;
-            const offset = (page - 1) * perPage;
-            const searchQuery = req.query.search || '';
 
             // Build WHERE clause for search
             let whereClause = 'user_id = ?';
