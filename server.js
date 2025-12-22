@@ -139,7 +139,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.31 - Smart POST/PUT - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.32 - DB Promociones - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -529,8 +529,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.31';
-                                    const footerDescription = 'Listing Manager & Repricer - Smart POST/PUT';
+                                    const version = 'v12.32';
+                                    const footerDescription = 'Listing Manager & Repricer - DB Promociones';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -859,58 +859,104 @@ app.get('/promotions', async (req, res) => {
                 }
             };
 
-            const [cand, start, invit, pend] = await Promise.all([
-                fetchByStatus('candidate'),
-                fetchByStatus('started'),
-                fetchByStatus('invitation'),
-                fetchByStatus('pending')
-            ]);
+            // ===== NEW APPROACH: Load from DB, then enrich with promo data =====
 
-            const allItemsRaw = [...cand, ...start, ...invit, ...pend];
-            const candidateIds = [...new Set(allItemsRaw.map(r => r.id).filter(id => id))];
-
-            // Create a lookup map for promo status and price
-            const promoInfoMap = {};
-            allItemsRaw.forEach(r => {
-                if (r.id) {
-                    promoInfoMap[r.id] = {
-                        status: r.status,
-                        price: r.price, // For started items
-                        min: r.min_discounted_price,
-                        max: r.max_discounted_price,
-                        suggested: r.suggested_discounted_price,
-                        original: r.original_price
-                    };
-                }
+            // 1. Load all items from database (fast!)
+            const dbItems = await new Promise((resolve, reject) => {
+                db.all(
+                    `SELECT * FROM items_v14 WHERE user_id = ? ORDER BY last_updated DESC LIMIT 200`,
+                    [userId],
+                    (err, rows) => {
+                        if (err) {
+                            console.error('[Promotions] DB Error:', err);
+                            reject(err);
+                        } else {
+                            resolve(rows || []);
+                        }
+                    }
+                );
             });
 
-            console.log(`[Promotions] Found ${candidateIds.length} unique items for campaign ${activeCampaignId}`);
+            console.log(`[Promotions] Loaded ${dbItems.length} items from database`);
 
-            if (candidateIds.length > 0) {
-                const chunkArray = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size));
-                const batches = chunkArray(candidateIds, 20);
+            // 2. Fetch promotion info from API (only for selected campaign)
+            const promoInfoMap = {};
 
-                for (const batch of batches) {
+            if (activeCampaignId) {
+                const fetchByStatus = async (status) => {
                     try {
-                        const itemsResponse = await axios.get(`https://api.mercadolibre.com/items`, {
+                        const res = await axios.get(`https://api.mercadolibre.com/seller-promotions/${activeCampaignId}/items`, {
                             headers: { Authorization: `Bearer ${accessToken}` },
-                            params: { ids: batch.join(',') }
+                            params: { promotion_type: activeCampaignType, status, app_version: 'v2' }
                         });
-                        // Items multiget returns [{code: 200, body: {...}}, ...]
-                        const validItems = itemsResponse.data
-                            .filter(res => res.code === 200 && res.body)
-                            .map(res => {
-                                const body = res.body;
-                                body.promo_info = promoInfoMap[body.id] || {};
-                                return body;
-                            });
-
-                        candidates = candidates.concat(validItems);
+                        rawApiData[status] = res.data;
+                        return res.data.results || res.data.items || [];
                     } catch (e) {
-                        console.error('Batch Item Fetch Error:', e.message);
+                        console.error(`[Promotions] API Error for ${status}:`, e.response?.data || e.message);
+                        rawApiData[status + '_error'] = e.response?.data || e.message;
+                        return [];
                     }
-                }
+                };
+
+                const [cand, start, invit, pend] = await Promise.all([
+                    fetchByStatus('candidate'),
+                    fetchByStatus('started'),
+                    fetchByStatus('invitation'),
+                    fetchByStatus('pending')
+                ]);
+
+                const allItemsRaw = [...cand, ...start, ...invit, ...pend];
+
+                // Create lookup map for promo status and price
+                allItemsRaw.forEach(r => {
+                    if (r.id) {
+                        promoInfoMap[r.id] = {
+                            status: r.status,
+                            price: r.price,
+                            min: r.min_discounted_price,
+                            max: r.max_discounted_price,
+                            suggested: r.suggested_discounted_price,
+                            original: r.original_price
+                        };
+                    }
+                });
+
+                console.log(`[Promotions] Found ${Object.keys(promoInfoMap).length} items with promo data for campaign ${activeCampaignId}`);
             }
+
+            // 3. Merge DB items with promo info and filter
+            candidates = dbItems
+                .map(item => {
+                    // Parse attributes if stored as JSON string
+                    let attributes = [];
+                    try {
+                        attributes = item.attributes ? JSON.parse(item.attributes) : [];
+                    } catch (e) {
+                        // If not JSON, create brand attribute from brand column
+                        if (item.brand) {
+                            attributes = [{ id: 'BRAND', value_name: item.brand }];
+                        }
+                    }
+
+                    return {
+                        id: item.id,
+                        title: item.title,
+                        thumbnail: item.thumbnail,
+                        price: item.price,
+                        attributes: attributes,
+                        promo_info: promoInfoMap[item.id] || {}
+                    };
+                })
+                .filter(item => {
+                    // If campaign selected, only show items with promo info
+                    if (activeCampaignId) {
+                        return promoInfoMap[item.id] !== undefined;
+                    }
+                    // Otherwise show all items
+                    return true;
+                });
+
+            console.log(`[Promotions] Showing ${candidates.length} candidates after filtering`);
         }
 
         const campaignsHtml = campaigns.map(c => `
