@@ -138,7 +138,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.23 - DB Updates Restored - ${new Date().toISOString()}
+        v12.24 - Sync Promo Data - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -528,8 +528,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.23';
-                                    const footerDescription = 'Listing Manager & Repricer - DB Updates Restored';
+                                    const version = 'v12.24';
+                                    const footerDescription = 'Listing Manager & Repricer - Sync Promo Data';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1239,23 +1239,41 @@ app.post('/sync-listings', async (req, res) => {
                 if (!r.body || r.code !== 200) return null;
                 const item = r.body;
 
-                // B. Fetch Sale Price (Parallel)
+                // B. Fetch Sale Price AND Promotion Data (Parallel)
                 let salePrice = null;
                 let saleOriginal = null;
                 let promoId = null;
                 let promoType = null;
 
                 try {
-                    const spRes = await axios.get(`https://api.mercadolibre.com/items/${item.id}/sale_price`, {
+                    // Fetch active promotion from seller-promotions endpoint
+                    const promoRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${item.id}?app_version=v2`, {
                         headers: { Authorization: `Bearer ${accessToken}` }
-                    }).catch(() => ({ data: {} })); // Ignore errors
-                    if (spRes.data?.amount) {
-                        salePrice = spRes.data.amount;
-                        saleOriginal = spRes.data.regular_amount;
-                        promoId = spRes.data.metadata?.promotion_id;
-                        promoType = spRes.data.metadata?.promotion_type;
+                    }).catch(() => ({ data: [] }));
+
+                    // Find the active/started promotion
+                    const activePromo = promoRes.data?.find(p => p.status === 'started');
+                    if (activePromo) {
+                        promoId = activePromo.id;
+                        promoType = activePromo.type;
+                        salePrice = activePromo.price;
+                        saleOriginal = activePromo.original_price;
+                        console.log(`[Sync] Found active promo for ${item.id}: ${promoId} (${promoType})`);
+                    } else {
+                        // Fallback to sale_price endpoint if no active promo found
+                        const spRes = await axios.get(`https://api.mercadolibre.com/items/${item.id}/sale_price`, {
+                            headers: { Authorization: `Bearer ${accessToken}` }
+                        }).catch(() => ({ data: {} }));
+                        if (spRes.data?.amount) {
+                            salePrice = spRes.data.amount;
+                            saleOriginal = spRes.data.regular_amount;
+                            promoId = spRes.data.metadata?.promotion_id;
+                            promoType = spRes.data.metadata?.promotion_type;
+                        }
                     }
-                } catch (e) { }
+                } catch (e) {
+                    console.error(`[Sync] Error fetching promo for ${item.id}:`, e.message);
+                }
 
                 // C. Extra Data
                 const freeShipping = item.shipping?.free_shipping ? 1 : 0;
