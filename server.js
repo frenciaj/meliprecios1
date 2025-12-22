@@ -1137,8 +1137,10 @@ app.post('/apply-promotion', async (req, res) => {
             api_error: error.response?.data
         };
         console.error('Apply Promo Final Error:', JSON.stringify(debugInfo));
-
-    });
+        res.status(500).json({
+            success: false,
+            error: JSON.stringify(debugInfo) // Send JSON as string to ensure it shows in alert
+        });
     }
 });
 
