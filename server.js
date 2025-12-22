@@ -138,7 +138,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.26 - Await DB Updates - ${new Date().toISOString()}
+        v12.27 - User Friendly Errors - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -528,8 +528,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.26';
-                                    const footerDescription = 'Listing Manager & Repricer - Await DB Updates';
+                                    const version = 'v12.27';
+                                    const footerDescription = 'Listing Manager & Repricer - User Friendly Errors';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -690,8 +690,35 @@ app.get('/listings', async (req, res) => {
                                     if (res.ok) {
                                         location.reload();
                                     } else {
-                                        const text = await res.text();
-                                        alert('Error updating promo: ' + text);
+                                        let errorMsg = 'Unknown Error';
+                                        try {
+                                            const data = await res.json();
+                                            // 1. Unpack server error wrapper
+                                            if (data.error) {
+                                                // 2. Check if error is a stringified JSON (from our backend)
+                                                if (data.error.startsWith('{')) {
+                                                    const errorObj = JSON.parse(data.error);
+                                                    
+                                                    // 3. Extract best message
+                                                    if (errorObj.api_error && errorObj.api_error.message) {
+                                                        errorMsg = errorObj.api_error.message;
+                                                        
+                                                        // 4. Overrides for Humans
+                                                        if (errorMsg.includes('PRICE_GT_CURRENT')) {
+                                                            errorMsg = "⚠️ Operation Denied: You cannot raise the price of an active promotion.";
+                                                        }
+                                                    } else if (errorObj.message) {
+                                                        errorMsg = errorObj.message;
+                                                    }
+                                                } else {
+                                                    errorMsg = data.error;
+                                                }
+                                            }
+                                        } catch (e) {
+                                            errorMsg = await res.text(); // Fallback to raw text
+                                        }
+
+                                        alert('Error updating promo: ' + errorMsg);
                                         btn.disabled = false;
                                         btn.innerHTML = '✓';
                                     }
