@@ -138,7 +138,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.22 - Scope Fix & DB Isolation - ${new Date().toISOString()}
+        v12.23 - DB Updates Restored - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -528,8 +528,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.22';
-                                    const footerDescription = 'Listing Manager & Repricer - Scope Fix & DB Isolation';
+                                    const version = 'v12.23';
+                                    const footerDescription = 'Listing Manager & Repricer - DB Updates Restored';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -737,15 +737,13 @@ app.post('/update-price', async (req, res) => {
         });
         console.log(`[Price Update] API Success for ${itemId}`);
 
-        // 3. Update Local DB (DISABLED TO ISOLATE CRASH)
-        /*
+        // 3. Update Local DB
         db.run(`UPDATE items_v14 SET price = ?, last_updated = ? WHERE id = ? AND user_id = ?`,
             [parseFloat(newPrice), new Date().toISOString(), itemId, userId],
             (err) => {
                 if (err) console.error('Local DB Update Error:', err);
             }
         );
-        */
 
         return res.json({ success: true });
     } catch (error) {
