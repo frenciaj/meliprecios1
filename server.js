@@ -128,7 +128,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.5 - Fixed Inline Editing & DB Sync - ${new Date().toISOString()}
+        v12.8 - Spanish Search & Brand UI - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -461,19 +461,19 @@ app.get('/listings', async (req, res) => {
 
                         <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; background: #f9f9f9; padding: 15px; border-radius: 8px;">
                             <form action="/listings" method="GET" style="display: flex; gap: 10px; width: 100%;">
-                                <input type="text" name="q" value="${req.query.q || ''}" placeholder="Search title or ID..." style="flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                <input type="text" name="q" value="${req.query.q || ''}" placeholder="Buscar por título, ID o marca..." style="flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
                                 <select name="status" style="padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-                                    <option value="all" ${statusFilter === 'all' ? 'selected' : ''}>All Statuses</option>
-                                    <option value="active" ${statusFilter === 'active' ? 'selected' : ''}>Active</option>
-                                    <option value="paused" ${statusFilter === 'paused' ? 'selected' : ''}>Paused</option>
-                                    <option value="closed" ${statusFilter === 'closed' ? 'selected' : ''}>Closed</option>
+                                    <option value="all" ${statusFilter === 'all' ? 'selected' : ''}>Todos los Estados</option>
+                                    <option value="active" ${statusFilter === 'active' ? 'selected' : ''}>Activo</option>
+                                    <option value="paused" ${statusFilter === 'paused' ? 'selected' : ''}>Pausado</option>
+                                    <option value="closed" ${statusFilter === 'closed' ? 'selected' : ''}>Cerrado</option>
                                 </select>
                                 <select name="limit" onchange="this.form.submit()" style="padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-                                    <option value="50" ${limit === 50 ? 'selected' : ''}>50 / page</option>
-                                    <option value="100" ${limit === 100 ? 'selected' : ''}>100 / page</option>
-                                    <option value="200" ${limit === 200 ? 'selected' : ''}>200 / page</option>
+                                    <option value="50" ${limit === 50 ? 'selected' : ''}>50 / pág</option>
+                                    <option value="100" ${limit === 100 ? 'selected' : ''}>100 / pág</option>
+                                    <option value="200" ${limit === 200 ? 'selected' : ''}>200 / pág</option>
                                 </select>
-                                <button type="submit" style="background: #3483fa; color: white; border: none; padding: 0 20px; border-radius: 4px; cursor: pointer;">Search</button>
+                                <button type="submit" style="background: #3483fa; color: white; border: none; padding: 0 20px; border-radius: 4px; cursor: pointer;">Buscar</button>
                             </form>
                         </div>
 
@@ -517,8 +517,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.7';
-                                    const footerDescription = 'Listing Manager & Repricer - Render Fix';
+                                    const version = 'v12.8';
+                                    const footerDescription = 'Listing Manager & Repricer - Spanish Search';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
