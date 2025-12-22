@@ -128,7 +128,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.19 - Price Update Diagnostics - ${new Date().toISOString()}
+        v12.20 - Backend Timeout Enforced - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -518,8 +518,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.19';
-                                    const footerDescription = 'Listing Manager & Repricer - Price Update Diagnostics';
+                                    const version = 'v12.20';
+                                    const footerDescription = 'Listing Manager & Repricer - Backend Timeout Enforced';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -718,10 +718,14 @@ app.post('/update-price', async (req, res) => {
         const userRes = await axios.get('https://api.mercadolibre.com/users/me', { headers: { Authorization: `Bearer ${accessToken}` } });
         const userId = userRes.data.id;
 
-        // 2. Update API
+        console.log(`[Price Update] Item: ${itemId}, New Price: ${newPrice}, User: ${userId}`);
+
+        // 2. Update API with explicit timeout
         await axios.put(`https://api.mercadolibre.com/items/${itemId}`, { price: parseFloat(newPrice) }, {
-            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            timeout: 10000 // 10s timeout
         });
+        console.log(`[Price Update] API Success for ${itemId}`);
 
         // 3. Update Local DB
         db.run(`UPDATE items_v14 SET price = ?, last_updated = ? WHERE id = ? AND user_id = ?`,
