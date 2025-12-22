@@ -139,7 +139,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.30 - Promo Search - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.31 - Smart POST/PUT - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -529,8 +529,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.30';
-                                    const footerDescription = 'Listing Manager & Repricer - Promo Search';
+                                    const version = 'v12.31';
+                                    const footerDescription = 'Listing Manager & Repricer - Smart POST/PUT';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1228,8 +1228,14 @@ app.post('/apply-promotion', async (req, res) => {
 
     const { item_id, promotion_id, promotion_type, deal_price } = req.body;
 
-    const makeRequest = async (pType) => {
-        return axios.put(`https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`, {
+    const makeRequest = async (pType, status) => {
+        // Use POST for candidates (creating offer), PUT for started (updating offer)
+        const method = status === 'started' ? 'put' : 'post';
+        const action = status === 'started' ? 'Updating' : 'Creating';
+
+        console.log(`[Promo] ${action} offer (${method.toUpperCase()}) for status: ${status || 'unknown'}`);
+
+        return axios[method](`https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`, {
             promotion_id,
             promotion_type: pType,
             deal_price
@@ -1241,6 +1247,7 @@ app.post('/apply-promotion', async (req, res) => {
     // Declare at function scope so catch block can access them
     let authoritativeType = promotion_type;
     let availablePromotions = [];
+    let promoStatus = null; // Track if candidate or started
 
     try {
         // 1. Fetch available promotions for this item to get authoritative Type
@@ -1255,8 +1262,9 @@ app.post('/apply-promotion', async (req, res) => {
             // Find the matching promotion
             const matchingPromo = availablePromotions.find(p => p.id === promotion_id);
             if (matchingPromo) {
-                console.log(`[Promo] Found authoritative match. Type: ${authoritativeType} -> ${matchingPromo.type}`);
+                console.log(`[Promo] Found authoritative match. Type: ${authoritativeType} -> ${matchingPromo.type}, Status: ${matchingPromo.status}`);
                 authoritativeType = matchingPromo.type;
+                promoStatus = matchingPromo.status; // Store status
             } else {
                 console.warn(`[Promo] Warning: Promo ID ${promotion_id} not found in live item data. Using provided type.`);
             }
@@ -1268,11 +1276,11 @@ app.post('/apply-promotion', async (req, res) => {
         // HEURISTIC FIX: Map generic statuses to API Types
         if (authoritativeType === 'campaign') authoritativeType = 'MARKETPLACE_CAMPAIGN';
 
-        // 2. Make the request with authoritative type
+        // 2. Make the request with authoritative type and status
         let lastError;
         try {
-            console.log(`[Promo] Sending Update. Type: ${authoritativeType}`);
-            await makeRequest(authoritativeType);
+            console.log(`[Promo] Sending request. Type: ${authoritativeType}, Status: ${promoStatus || 'unknown'}`);
+            await makeRequest(authoritativeType, promoStatus);
         } catch (err1) {
             lastError = err1;
             console.error('[Promo] Attempt 1 Failed:', err1.response?.data || err1.message);
@@ -1281,7 +1289,7 @@ app.post('/apply-promotion', async (req, res) => {
             if (authoritativeType && authoritativeType !== authoritativeType.toUpperCase()) {
                 try {
                     console.log(`[Promo] Retrying with uppercase type: ${authoritativeType.toUpperCase()}`);
-                    await makeRequest(authoritativeType.toUpperCase());
+                    await makeRequest(authoritativeType.toUpperCase(), promoStatus);
                     lastError = null; // Success
                 } catch (err2) {
                     lastError = err2;
