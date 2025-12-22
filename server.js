@@ -138,7 +138,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        v12.27 - User Friendly Errors - ${new Date().toISOString()}
+        v12.28 - Promo DB Fix - ${new Date().toISOString()}
     </footer>
 </body>
 </html>
@@ -528,8 +528,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.27';
-                                    const footerDescription = 'Listing Manager & Repricer - User Friendly Errors';
+                                    const version = 'v12.28';
+                                    const footerDescription = 'Listing Manager & Repricer - Promo DB Fix';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1193,11 +1193,19 @@ app.post('/apply-promotion', async (req, res) => {
 
         if (lastError) throw lastError;
 
-        // Update DB immediately
-        db.run(`UPDATE items SET sale_price_amount = ?, last_updated = ? WHERE id = ?`,
-            [deal_price, new Date().toISOString(), item_id], (err) => {
-                if (err) console.error('DB Update Error:', err);
-            });
+        // Update DB immediately (wrapped in Promise)
+        await new Promise((resolve, reject) => {
+            db.run(`UPDATE items_v14 SET sale_price_amount = ?, last_updated = ? WHERE id = ?`,
+                [parseFloat(deal_price), new Date().toISOString(), item_id], (err) => {
+                    if (err) {
+                        console.error('DB Update Error:', err);
+                        // Don't fail the request if DB fails, but log it
+                        resolve();
+                    } else {
+                        resolve();
+                    }
+                });
+        });
 
         res.json({ success: true });
     } catch (error) {
