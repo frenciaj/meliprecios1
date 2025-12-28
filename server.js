@@ -139,7 +139,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.36 - Fix Pagination Vars - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.37 - Percentage & Sort - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -529,8 +529,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.36';
-                                    const footerDescription = 'Listing Manager & Repricer - Fix Pagination Vars';
+                                    const version = 'v12.37';
+                                    const footerDescription = 'Listing Manager & Repricer - Percentage & Sort';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -847,6 +847,7 @@ app.get('/promotions', async (req, res) => {
         const perPage = 50;
         const offset = (page - 1) * perPage;
         const searchQuery = req.query.search || '';
+        const sortBy = req.query.sort || 'date';
 
         // Build WHERE clause for search
         let whereClause = 'user_id = ?';
@@ -857,6 +858,12 @@ app.get('/promotions', async (req, res) => {
             const searchPattern = `%${searchQuery}%`;
             queryParams.push(searchPattern, searchPattern, searchPattern);
         }
+
+        // Build ORDER BY clause
+        let orderByClause = 'last_updated DESC'; // Default: most recent
+        if (sortBy === 'sales') orderByClause = 'sold_quantity DESC NULLS LAST';
+        if (sortBy === 'price_asc') orderByClause = 'price ASC';
+        if (sortBy === 'price_desc') orderByClause = 'price DESC';
 
         // Get total count (with search filter) - moved outside if block
         const totalItems = await new Promise((resolve, reject) => {
@@ -893,7 +900,7 @@ app.get('/promotions', async (req, res) => {
             // Load paginated items from database (with search filter)
             const dbItems = await new Promise((resolve, reject) => {
                 db.all(
-                    `SELECT * FROM items_v14 WHERE ${whereClause} ORDER BY last_updated DESC LIMIT ? OFFSET ?`,
+                    `SELECT * FROM items_v14 WHERE ${whereClause} ORDER BY ${orderByClause} LIMIT ? OFFSET ?`,
                     [...queryParams, perPage, offset],
                     (err, rows) => {
                         if (err) {
@@ -1067,6 +1074,17 @@ app.get('/promotions', async (req, res) => {
                     <div id="searchResultsCount" style="margin-top: 8px; font-size: 0.85rem; color: #666; display: none;"></div>
                 </div>
                 
+                <!-- Sort Dropdown -->
+                <div style="margin-bottom: 20px;">
+                    <label style="font-weight: 500; color: #333; margin-right: 10px;">Ordenar por:</label>
+                    <select id="sortBy" onchange="applySort()" style="padding: 8px 12px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 0.95rem; cursor: pointer; background: white;">
+                        <option value="date" ${sortBy === 'date' ? 'selected' : ''}>Más recientes</option>
+                        <option value="sales" ${sortBy === 'sales' ? 'selected' : ''}>Más vendidos</option>
+                        <option value="price_asc" ${sortBy === 'price_asc' ? 'selected' : ''}>Precio: menor a mayor</option>
+                        <option value="price_desc" ${sortBy === 'price_desc' ? 'selected' : ''}>Precio: mayor a menor</option>
+                    </select>
+                </div>
+                
                 <!-- Pagination Controls -->
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
                     <button 
@@ -1156,9 +1174,28 @@ ${JSON.stringify(rawApiData, null, 2)}
                     </div>
 
                     <div class="input-group">
-                        <label class="input-label">Tu precio de oferta:</label>
+                        <label class="input-label">Método de precio:</label>
+                        <div style="display: flex; gap: 20px; margin-bottom: 10px;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="radio" name="priceMethod" value="fixed" checked style="margin-right: 5px;">
+                                Precio fijo
+                            </label>
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="radio" name="priceMethod" value="percentage" style="margin-right: 5px;">
+                                Porcentaje de descuento
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label class="input-label" id="priceInputLabel">Tu precio de oferta:</label>
                         <div class="modal-input-wrapper">
                             <input type="number" id="promoDealPrice" class="modal-input" placeholder="0.00">
+                            <input type="number" id="promoPercentage" class="modal-input" placeholder="15" style="display: none;" min="0" max="100">
+                            <span id="percentageSign" style="display: none; position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #666; font-weight: 500;">%</span>
+                        </div>
+                        <div id="calculatedPrice" style="margin-top: 8px; font-size: 0.9rem; color: #28a745; display: none;">
+                            Precio final: <strong>$ <span id="finalPriceDisplay">0</span></strong>
                         </div>
                     </div>
 
@@ -1181,17 +1218,83 @@ ${JSON.stringify(rawApiData, null, 2)}
                     document.getElementById('guideMax').textContent = '$ ' + (data.max?.toLocaleString() || '---');
                     document.getElementById('guideSuggested').textContent = '$ ' + (data.suggested?.toLocaleString() || '---');
                     
+                    // Reset to fixed price method
+                    document.querySelector('input[name="priceMethod"][value="fixed"]').checked = true;
+                    document.getElementById('promoDealPrice').style.display = 'block';
+                    document.getElementById('promoPercentage').style.display = 'none';
+                    document.getElementById('percentageSign').style.display = 'none';
+                    document.getElementById('calculatedPrice').style.display = 'none';
+                    document.getElementById('priceInputLabel').textContent = 'Tu precio de oferta:';
+                    
                     document.getElementById('promoDealPrice').value = data.current || data.suggested || data.original;
+                    document.getElementById('promoPercentage').value = '';
                     
                     document.getElementById('promoModal').style.display = 'flex';
                 };
+
+                // Toggle between fixed price and percentage
+                document.querySelectorAll('input[name="priceMethod"]').forEach(radio => {
+                    radio.addEventListener('change', function() {
+                        const fixedInput = document.getElementById('promoDealPrice');
+                        const percentInput = document.getElementById('promoPercentage');
+                        const percentSign = document.getElementById('percentageSign');
+                        const calcPrice = document.getElementById('calculatedPrice');
+                        const label = document.getElementById('priceInputLabel');
+                        
+                        if (this.value === 'percentage') {
+                            fixedInput.style.display = 'none';
+                            percentInput.style.display = 'block';
+                            percentSign.style.display = 'block';
+                            calcPrice.style.display = 'block';
+                            label.textContent = 'Porcentaje de descuento:';
+                            // Trigger calculation if value exists
+                            if (percentInput.value) {
+                                updateCalculatedPrice();
+                            }
+                        } else {
+                            fixedInput.style.display = 'block';
+                            percentInput.style.display = 'none';
+                            percentSign.style.display = 'none';
+                            calcPrice.style.display = 'none';
+                            label.textContent = 'Tu precio de oferta:';
+                        }
+                    });
+                });
+
+                // Calculate price from percentage
+                function updateCalculatedPrice() {
+                    const percentage = parseFloat(document.getElementById('promoPercentage').value);
+                    if (isNaN(percentage) || percentage < 0 || percentage > 100) {
+                        document.getElementById('finalPriceDisplay').textContent = '0';
+                        return;
+                    }
+                    const originalPrice = currentPromoData.original || 0;
+                    const finalPrice = Math.round(originalPrice * (1 - percentage / 100));
+                    document.getElementById('finalPriceDisplay').textContent = finalPrice.toLocaleString('es-AR');
+                }
+
+                // Update calculation on input
+                document.getElementById('promoPercentage').addEventListener('input', updateCalculatedPrice);
 
                 window.closePromoModal = function() {
                     document.getElementById('promoModal').style.display = 'none';
                 };
 
                 document.getElementById('btnConfirmPromo').onclick = async function() {
-                    const price = parseFloat(document.getElementById('promoDealPrice').value);
+                    const method = document.querySelector('input[name="priceMethod"]:checked').value;
+                    let price;
+                    
+                    if (method === 'percentage') {
+                        const percentage = parseFloat(document.getElementById('promoPercentage').value);
+                        if (isNaN(percentage) || percentage < 0 || percentage > 100) {
+                            return alert('Por favor ingrese un porcentaje válido (0-100).');
+                        }
+                        const originalPrice = currentPromoData.original || 0;
+                        price = Math.round(originalPrice * (1 - percentage / 100));
+                    } else {
+                        price = parseFloat(document.getElementById('promoDealPrice').value);
+                    }
+                    
                     if (!price || isNaN(price)) return alert('Por favor ingrese un precio válido.');
 
                     const btn = this;
@@ -1259,6 +1362,15 @@ ${JSON.stringify(rawApiData, null, 2)}
                     if (page < 1) return;
                     const url = new URL(window.location);
                     url.searchParams.set('page', page);
+                    window.location.href = url.toString();
+                };
+
+                // Apply sort order
+                window.applySort = function() {
+                    const sortValue = document.getElementById('sortBy').value;
+                    const url = new URL(window.location);
+                    url.searchParams.set('sort', sortValue);
+                    url.searchParams.set('page', '1'); // Reset to page 1 on sort change
                     window.location.href = url.toString();
                 };
 
