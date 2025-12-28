@@ -606,6 +606,7 @@ app.get('/listings', async (req, res) => {
 
                         <script>
                             async function syncListings() {
+                                console.log('Sync Clicked'); 
                                 const btn = document.getElementById('sync-btn');
                                 const originalText = btn.innerHTML;
                                 btn.disabled = true;
