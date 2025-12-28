@@ -148,7 +148,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.38 - Add Sold Qty - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.39 - Fix Promo Status - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -538,8 +538,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.38';
-                                    const footerDescription = 'Listing Manager & Repricer - Add Sold Qty';
+                                    const version = 'v12.39';
+                                    const footerDescription = 'Listing Manager & Repricer - Fix Promo Status';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1489,15 +1489,21 @@ app.post('/apply-promotion', async (req, res) => {
 
         if (lastError) throw lastError;
 
-        // Update DB immediately (wrapped in Promise)
+        // Update DB with promotion data immediately (wrapped in Promise)
         await new Promise((resolve, reject) => {
-            db.run(`UPDATE items_v14 SET sale_price_amount = ?, last_updated = ? WHERE id = ?`,
-                [parseFloat(deal_price), new Date().toISOString(), item_id], (err) => {
+            db.run(`UPDATE items_v14 SET 
+                    sale_price_amount = ?, 
+                    promotion_id = ?,
+                    promotion_type = ?,
+                    last_updated = ? 
+                    WHERE id = ?`,
+                [parseFloat(deal_price), promotion_id, promotion_type, new Date().toISOString(), item_id], (err) => {
                     if (err) {
                         console.error('DB Update Error:', err);
                         // Don't fail the request if DB fails, but log it
                         resolve();
                     } else {
+                        console.log(`[DB] Updated promotion for ${item_id}: ${promotion_id} (${promotion_type})`);
                         resolve();
                     }
                 });
