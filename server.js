@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.68 - Fix Promo API V2 - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.69 - Fix Scroll V2 - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -584,7 +584,7 @@ app.get('/listings', async (req, res) => {
                                     <div class="modal-title">Agregar Promoción</div>
                                     <button class="close-modal" onclick="closeAddPromoModal()">×</button>
                                 </div>
-                                <div id="promo-candidates-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;">
+                                <div id="promo-candidates-list">
                                     <div style="text-align: center; color: #666; padding: 20px;">Cargando promociones...</div>
                                 </div>
                                 <div id="promo-config-section" style="display: none; border-top: 1px solid #eee; padding-top: 15px;">
@@ -606,7 +606,6 @@ app.get('/listings', async (req, res) => {
 
                         <script>
                             async function syncListings() {
-                                console.log('Sync Clicked'); 
                                 const btn = document.getElementById('sync-btn');
                                 const originalText = btn.innerHTML;
                                 btn.disabled = true;

@@ -714,6 +714,28 @@ tr:last-child td {
     color: white;
 }
 
-.btn-modal-confirm:hover {
-    background: #294c8c;
+
+/* Promo Candidates List */
+#promo-candidates-list {
+    max-height: 300px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* Prevents scroll chaining to body */
+    margin-bottom: 20px;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    background: #fff;
+}
+
+#promo-candidates-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+#promo-candidates-list::-webkit-scrollbar-thumb {
+    background-color: #ccc;
+    border-radius: 4px;
+}
+
+#promo-candidates-list::-webkit-scrollbar-track {
+    background-color: #f5f5f5;
 }
