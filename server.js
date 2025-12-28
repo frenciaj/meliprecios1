@@ -148,7 +148,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.39 - Fix Promo Status - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.40 - Optimistic Status - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -538,8 +538,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.39';
-                                    const footerDescription = 'Listing Manager & Repricer - Fix Promo Status';
+                                    const version = 'v12.40';
+                                    const footerDescription = 'Listing Manager & Repricer - Optimistic Status';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1324,8 +1324,25 @@ ${JSON.stringify(rawApiData, null, 2)}
                         
                         const result = await response.json();
                         if (result.success) {
+                            // Optimistic UI update instead of full reload
+                            const card = document.querySelector(`[data - id= "${currentPromoData.id}"]`);
+                            if (card) {
+                                const btn = card.querySelector('.btn-participate');
+                                if (btn) {
+                                    btn.textContent = 'Participando';
+                                    btn.style.background = '#00a650';
+                                }
+                                // Update price display
+                                const priceRow = card.querySelector('.promo-price-row > div');
+                                if (priceRow) {
+                                    priceRow.innerHTML = `
+            < div style = "font-size: 0.7rem; color: #999; text-decoration: line-through;" > Previo: $ ${ currentPromoData.original?.toLocaleString('es-AR') }</div >
+                <div style="font-weight: 700; color: #00a650; font-size: 1.1rem;">$ ${price.toLocaleString('es-AR')}</div>
+        `;
+                                }
+                            }
+                            closePromoModal();
                             alert('¡Éxito! La promoción se ha configurado correctamente.');
-                            location.reload();
                         } else {
                             alert('Error: ' + result.error);
                             btn.disabled = false;
