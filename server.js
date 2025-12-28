@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.72 - Final Join Logic - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.73 - UI Polish - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -598,15 +598,10 @@ app.get('/listings', async (req, res) => {
                                         </div>
                                         <div class="input-group" style="flex: 1;">
                                             <label class="input-label">% Descuento</label>
-                                            <div class="modal-input-wrapper" style="position: relative;">
-                                                <input type="number" id="new-promo-percent" class="modal-input" placeholder="0" style="padding-left: 15px;" oninput="syncPercentageToPrice()">
+                                            <div class="modal-input-wrapper no-currency" style="position: relative;">
+                                                <input type="number" id="new-promo-percent" class="modal-input" placeholder="0" oninput="syncPercentageToPrice()">
                                                 <span style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #999;">%</span>
                                             </div>
-                                            <!-- Hide the default $ sign for percent -->
-                                            <style>
-                                                #new-promo-percent + span { display: none; } /* Hack if wrapper adds $ */
-                                                #new-promo-percent ~ span { display: block !important; }
-                                            </style>
                                         </div>
                                     </div>
                                     <div id="promo-guidelines" style="margin-bottom: 20px; font-size: 0.85rem; color: #666; background: #f8f9fa; padding: 10px; border-radius: 6px; display: none;">

@@ -679,6 +679,14 @@ tr:last-child td {
     background: #f9fafc;
 }
 
+.modal-input-wrapper.no-currency::before {
+    content: none;
+}
+
+.modal-input-wrapper.no-currency .modal-input {
+    padding-left: 15px;
+}
+
 .modal-input:focus {
     border-color: var(--meli-blue);
     background: white;
