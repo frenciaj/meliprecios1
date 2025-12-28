@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.76 - Syntax Fix V2 - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.77 - Local DB Sync - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -288,6 +288,52 @@ app.get('/debug-promo/:id', async (req, res) => {
     } catch (error) {
         console.error('Debug Promo Error:', error.response?.data || error.message);
         res.status(500).json({ error: error.message, details: error.response?.data });
+    }
+});
+
+app.post('/apply-promotion', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+    if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const { item_id, promotion_id, promotion_type, deal_price } = req.body;
+
+    if (!item_id || !promotion_id || !promotion_type) {
+        return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+
+    try {
+        console.log(`[Promo] Applying ${promotion_type} (${promotion_id}) to ${item_id} at $${deal_price}`);
+
+        const url = `https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`;
+
+        const payload = {
+            promotion_id,
+            promotion_type,
+            deal_price: parseFloat(deal_price)
+        };
+
+        const apiRes = await axios.post(url, payload, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        // Update Local DB so UI reflects the new promo state immediately
+        db.run(`UPDATE items_v14 SET promotion_id = ?, promotion_type = ? WHERE id = ?`,
+            [promotion_id, promotion_type, item_id],
+            (err) => {
+                if (err) console.error('DB Promo Update Error:', err);
+                else console.log(`[Promo] Updated local DB for ${item_id}`);
+            }
+        );
+
+        res.json({ success: true, api_response: apiRes.data });
+
+    } catch (error) {
+        console.error('Apply Promo Error:', error.response?.data || error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            details: error.response?.data
+        });
     }
 });
 
