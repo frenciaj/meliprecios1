@@ -148,7 +148,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.45 - Add Sold Qty - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.46 - Fix Sold Qty API - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -539,8 +539,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.45';
-                                    const footerDescription = 'Listing Manager & Repricer - Add Sold Qty';
+                                    const version = 'v12.46';
+                                    const footerDescription = 'Listing Manager & Repricer - Fix Sold Qty API';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1571,7 +1571,7 @@ app.post('/sync-listings', async (req, res) => {
 
         for (const batch of batches) {
             // A. Fetch Item Details including Attributes for Brand
-            const itemsRes = await axios.get(`https://api.mercadolibre.com/items?ids=${batch.join(',')}&attributes=id,title,thumbnail,price,currency_id,available_quantity,original_price,permalink,status,listing_type_id,shipping,attributes`, {
+            const itemsRes = await axios.get(`https://api.mercadolibre.com/items?ids=${batch.join(',')}&attributes=id,title,thumbnail,price,currency_id,available_quantity,original_price,permalink,status,listing_type_id,shipping,attributes,sold_quantity`, {
                 headers: { Authorization: `Bearer ${accessToken}` }
             });
 
