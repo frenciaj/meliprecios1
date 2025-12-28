@@ -156,7 +156,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.53 - Styled Promo Tooltip - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.54 - Fix Tooltip CSS - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -441,7 +441,6 @@ app.get('/listings', async (req, res) => {
                                                 <div class="tooltip-row"><span class="tooltip-label">Nombre:</span><span class="tooltip-value" style="color: #4da6ff;">${item.promotion_name || 'N/A'}</span></div>
                                                 <div class="tooltip-row"><span class="tooltip-label">ID:</span><span class="tooltip-value">${item.promotion_id || 'N/A'}</span></div>
                                                 <div class="tooltip-row"><span class="tooltip-label">Tipo:</span><span class="tooltip-value">${item.promotion_type || 'Unknown'}</span></div>
-                                                <div class="tooltip-row"><span class="tooltip-label">Precio Original:</span><span class="tooltip-value strike">$ ${item.original_price ? item.original_price.toLocaleString('es-AR') : '---'}</span></div>
                                             </div>
                                         </div>
                                         <div class="promo-edit-form" style="display: none; align-items: center; justify-content: center; gap: 5px; margin-top: 5px;">
