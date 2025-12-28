@@ -156,7 +156,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.60 - Add Promo UI - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.62 - Add Promo Debug - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -829,25 +829,51 @@ app.get('/listings', async (req, res) => {
 
                                 try {
                                     // Use debug-promo as proxy for "get eligible" for now
-                                    const res = await fetch(\`/debug-promo/\${itemId}\`);
+                                    const res = await fetch(`/ debug - promo / ${ itemId }`);
                                     const promos = await res.json();
                                     
+                                    // DEBUG: Dump raw JSON to check structure
+                                    const debugDisplay = document.createElement('pre');
+                                    debugDisplay.style.fontSize = '0.7rem';
+                                    debugDisplay.style.background = '#f5f5f5';
+                                    debugDisplay.style.padding = '10px';
+                                    debugDisplay.style.maxHeight = '100px';
+                                    debugDisplay.style.overflow = 'auto';
+                                    debugDisplay.textContent = JSON.stringify(promos, null, 2);
+                                    listContainer.appendChild(debugDisplay);
+
                                     renderPromoCandidates(promos);
                                 } catch (error) {
-                                    listContainer.innerHTML = \`<div style="color: red; text-align: center;">Error al cargar promociones: \${error.message}</div>\`;
+                                    listContainer.innerHTML = `< div style = "color: red; text-align: center;" > Error al cargar promociones: ${ error.message }</div > `;
                                 }
                             }
 
                             function renderPromoCandidates(promos) {
                                 const listContainer = document.getElementById('promo-candidates-list');
+                                // Don't clear innerHTML immediately so we keep the debug pre
+                                const existingDebug = listContainer.querySelector('pre');
                                 listContainer.innerHTML = '';
+                                if (existingDebug) listContainer.appendChild(existingDebug);
 
-                                if (!promos || promos.length === 0) {
-                                    listContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No hay promociones disponibles para este ítem.</div>';
-                                    return;
+                                let candidates = [];
+                                if (Array.isArray(promos)) {
+                                    candidates = promos;
+                                } else if (promos && promos.results && Array.isArray(promos.results)) {
+                                    candidates = promos.results;
+                                } else if (promos) {
+                                     // Only wrap in array if it looks like a single item (has id/type)
+                                     if (promos.id || promos.type) candidates = [promos];
                                 }
 
-                                const candidates = Array.isArray(promos) ? promos : [promos];
+                                if (candidates.length === 0) {
+                                    const noPromoDiv = document.createElement('div');
+                                    noPromoDiv.style.textAlign = 'center';
+                                    noPromoDiv.style.color = '#666';
+                                    noPromoDiv.style.padding = '20px';
+                                    noPromoDiv.textContent = 'No hay promociones disponibles o estructura desconocida.';
+                                    listContainer.appendChild(noPromoDiv);
+                                    return;
+                                }
 
                                 candidates.forEach(promo => {
                                     const div = document.createElement('div');
@@ -858,41 +884,45 @@ app.get('/listings', async (req, res) => {
                                     div.style.justifyContent = 'space-between';
                                     div.style.alignItems = 'center';
                                     
-                                    // Basic handling of promo object structure (needs refinement based on real data)
-                                    div.innerHTML = \`
-                                        <div>
-                                            <div style="font-weight: 600; color: #333;">\${promo.name || promo.id || 'Promoción'}</div>
-                                            <div style="font-size: 0.8rem; color: #666;">Type: \${promo.type || 'N/A'}</div>
-                                        </div>
-                                        <input type="radio" name="selectedPromo" value="\${promo.id}" onchange="selectPromoCandidate('\${promo.id}', '\${promo.type}')">
-                                    \`;
-                                    listContainer.appendChild(div);
+                                    // Try to find name/id/type
+                                    const name = promo.name || promo.id || 'Promoción sin nombre';
+                                    const type = promo.type || 'N/A';
+                                    const offerId = promo.id || '';
+
+                                    div.innerHTML = `
+                    < div >
+                                            <div style="font-weight: 600; color: #333;">${name}</div>
+                                            <div style="font-size: 0.8rem; color: #666;">Type: ${type}</div>
+                                        </div >
+                    <input type="radio" name="selectedPromo" value="${offerId}" onchange="selectPromoCandidate('${offerId}', '${type}')">
+                        `;
+                        listContainer.appendChild(div);
                                 });
                             }
 
-                            function selectPromoCandidate(promoId, promoType) {
-                                document.getElementById('promo-config-section').style.display = 'block';
-                                document.getElementById('btn-join-promo').disabled = false;
+                        function selectPromoCandidate(promoId, promoType) {
+                            document.getElementById('promo-config-section').style.display = 'block';
+                        document.getElementById('btn-join-promo').disabled = false;
                             }
 
-                            function closeAddPromoModal() {
-                                document.getElementById('add-promo-modal').style.display = 'none';
+                        function closeAddPromoModal() {
+                            document.getElementById('add-promo-modal').style.display = 'none';
                             }
 
-                            function submitJoinPromo() {
-                                alert("Join Promo Logic Implementation Pending");
+                        function submitJoinPromo() {
+                            alert("Join Promo Logic Implementation Pending");
                             }
 
-                            function applyListingsSort() {
+                        function applyListingsSort() {
                                 const sortValue = document.getElementById('sortBy').value;
-                                const url = new URL(window.location);
-                                url.searchParams.set('sort', sortValue);
-                                url.searchParams.set('page', '1');
-                                window.location.href = url.toString();
+                        const url = new URL(window.location);
+                        url.searchParams.set('sort', sortValue);
+                        url.searchParams.set('page', '1');
+                        window.location.href = url.toString();
                             }
-                        </script>
-                    </div>
-                `;
+                    </script>
+                    </div >
+                    `;
 
                 res.send(renderPage('My Listings', content, 'listings'));
             });
@@ -900,7 +930,7 @@ app.get('/listings', async (req, res) => {
 
     } catch (error) {
         console.error('Listings Error:', error.message);
-        res.send(renderPage('Error', `<p>Error fetching listings: ${error.message}</p>`, 'listings'));
+        res.send(renderPage('Error', `< p > Error fetching listings: ${ error.message }</p > `, 'listings'));
     }
 });
 
@@ -914,39 +944,39 @@ app.post('/update-price', async (req, res) => {
 
     try {
         // 1. Get User ID
-        const userRes = await axios.get('https://api.mercadolibre.com/users/me', { headers: { Authorization: `Bearer ${accessToken}` } });
+        const userRes = await axios.get('https://api.mercadolibre.com/users/me', { headers: { Authorization: `Bearer ${ accessToken } ` } });
         const userId = userRes.data.id;
 
-        console.log(`[Price Update] Item: ${itemId}, New Price: ${newPrice}, User: ${userId}`);
+        console.log(`[Price Update]Item: ${ itemId }, New Price: ${ newPrice }, User: ${ userId } `);
 
         // 2. Update API with explicit timeout
         await axios.put(`https://api.mercadolibre.com/items/${itemId}`, { price: parseFloat(newPrice) }, {
-            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            timeout: 5000 // Reduced to 5s to catch latency early
-        });
-        console.log(`[Price Update] API Success for ${itemId}`);
+                headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                timeout: 5000 // Reduced to 5s to catch latency early
+            });
+            console.log(`[Price Update] API Success for ${itemId}`);
 
-        // 3. Update Local DB (wrapped in Promise to ensure completion)
-        await new Promise((resolve, reject) => {
-            db.run(`UPDATE items_v14 SET price = ?, last_updated = ? WHERE id = ? AND user_id = ?`,
-                [parseFloat(newPrice), new Date().toISOString(), itemId, userId],
-                (err) => {
-                    if (err) {
-                        console.error('Local DB Update Error:', err);
-                        reject(err);
-                    } else {
-                        console.log(`[Price Update] DB Updated for ${itemId}`);
-                        resolve();
+            // 3. Update Local DB (wrapped in Promise to ensure completion)
+            await new Promise((resolve, reject) => {
+                db.run(`UPDATE items_v14 SET price = ?, last_updated = ? WHERE id = ? AND user_id = ?`,
+                    [parseFloat(newPrice), new Date().toISOString(), itemId, userId],
+                    (err) => {
+                        if (err) {
+                            console.error('Local DB Update Error:', err);
+                            reject(err);
+                        } else {
+                            console.log(`[Price Update] DB Updated for ${itemId}`);
+                            resolve();
+                        }
                     }
-                }
-            );
-        });
+                );
+            });
 
-        return res.json({ success: true });
-    } catch (error) {
-        return res.status(500).json({ success: false, error: error.message });
-    }
-});
+            return res.json({ success: true });
+        } catch (error) {
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    });
 
 // Update item quantity
 app.post('/update-quantity', async (req, res) => {
