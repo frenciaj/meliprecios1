@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.64 - DB Init Fix - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.67 - Safe Modal JS - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -815,114 +815,132 @@ app.get('/listings', async (req, res) => {
                             }
 
                             // --- Add Promotion Logic ---
+                            // --- Add Promotion Logic (Safely Rewritten) ---
                             async function openAddPromoModal(itemId, currentPrice) {
+                                console.log('Open Modal', itemId);
                                 const modal = document.getElementById('add-promo-modal');
                                 const listContainer = document.getElementById('promo-candidates-list');
                                 const configSection = document.getElementById('promo-config-section');
                                 const joinBtn = document.getElementById('btn-join-promo');
                                 
                                 modal.style.display = 'flex';
-                                listContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">Cargando promociones...</div>';
+                                listContainer.innerHTML = '';
+                                const loading = document.createElement('div');
+                                loading.textContent = 'Cargando promociones...';
+                                loading.style.padding = '20px';
+                                loading.style.textAlign = 'center';
+                                listContainer.appendChild(loading);
+
                                 configSection.style.display = 'none';
                                 joinBtn.disabled = true;
                                 
-                                // Store current item context
                                 modal.dataset.itemId = itemId;
                                 modal.dataset.originalPrice = currentPrice;
 
                                 try {
-                                    // Use debug-promo as proxy for "get eligible" for now
                                     const res = await fetch('/debug-promo/' + itemId);
                                     const promos = await res.json();
                                     
-                                    // DEBUG: Dump raw JSON to check structure
-                                    const debugDisplay = document.createElement('pre');
-                                    debugDisplay.style.fontSize = '0.7rem';
-                                    debugDisplay.style.background = '#f5f5f5';
-                                    debugDisplay.style.padding = '10px';
-                                    debugDisplay.style.maxHeight = '100px';
-                                    debugDisplay.style.overflow = 'auto';
-                                    debugDisplay.textContent = JSON.stringify(promos, null, 2);
-                                    listContainer.appendChild(debugDisplay);
+                                    listContainer.innerHTML = ''; // Clear loading
+
+                                    // Debug Display
+                                    const debugDetails = document.createElement('details');
+                                    const summary = document.createElement('summary');
+                                    summary.textContent = 'Ver JSON Respuesta';
+                                    summary.style.fontSize = '0.8rem';
+                                    summary.style.color = '#999';
+                                    summary.style.cursor = 'pointer';
+                                    debugDetails.appendChild(summary);
+                                    
+                                    const pre = document.createElement('pre');
+                                    pre.style.fontSize = '10px';
+                                    pre.style.maxHeight = '100px';
+                                    pre.style.overflow = 'auto';
+                                    pre.textContent = JSON.stringify(promos, null, 2);
+                                    debugDetails.appendChild(pre);
+                                    listContainer.appendChild(debugDetails);
 
                                     renderPromoCandidates(promos);
-                                } catch (error) {
-                                    listContainer.innerHTML = '<div style="color: red; text-align: center;">Error al cargar promociones: ' + error.message + '</div>';
+                                } catch (e) {
+                                    listContainer.innerHTML = '';
+                                    const errDiv = document.createElement('div');
+                                    errDiv.style.color = 'red';
+                                    errDiv.textContent = 'Error: ' + e.message;
+                                    listContainer.appendChild(errDiv);
                                 }
                             }
 
                             function renderPromoCandidates(promos) {
-                                const listContainer = document.getElementById('promo-candidates-list');
-                                // Don't clear innerHTML immediately so we keep the debug pre
-                                const existingDebug = listContainer.querySelector('pre');
-                                listContainer.innerHTML = '';
-                                if (existingDebug) listContainer.appendChild(existingDebug);
-
+                                const list = document.getElementById('promo-candidates-list');
+                                // Determine array
                                 let candidates = [];
-                                if (Array.isArray(promos)) {
-                                    candidates = promos;
-                                } else if (promos && promos.results && Array.isArray(promos.results)) {
-                                    candidates = promos.results;
-                                } else if (promos) {
-                                     // Only wrap in array if it looks like a single item (has id/type)
-                                     if (promos.id || promos.type) candidates = [promos];
-                                }
+                                if (Array.isArray(promos)) candidates = promos;
+                                else if (promos.results && Array.isArray(promos.results)) candidates = promos.results;
+                                else if (promos.id) candidates = [promos];
 
                                 if (candidates.length === 0) {
-                                    const noPromoDiv = document.createElement('div');
-                                    noPromoDiv.style.textAlign = 'center';
-                                    noPromoDiv.style.color = '#666';
-                                    noPromoDiv.style.padding = '20px';
-                                    noPromoDiv.textContent = 'No hay promociones disponibles o estructura desconocida.';
-                                    listContainer.appendChild(noPromoDiv);
+                                    const msg = document.createElement('div');
+                                    msg.textContent = 'No suitable promotions found.';
+                                    msg.style.padding = '20px';
+                                    msg.style.textAlign = 'center';
+                                    list.appendChild(msg);
                                     return;
                                 }
 
-                                candidates.forEach(promo => {
-                                    const div = document.createElement('div');
-                                    div.style.padding = '10px';
-                                    div.style.borderBottom = '1px solid #eee';
-                                    div.style.cursor = 'pointer';
-                                    div.style.display = 'flex';
-                                    div.style.justifyContent = 'space-between';
-                                    div.style.alignItems = 'center';
-                                    
-                                    // Try to find name/id/type
-                                    const name = promo.name || promo.id || 'Promoción sin nombre';
-                                    const type = promo.type || 'N/A';
-                                    const offerId = promo.id || '';
+                                candidates.forEach(p => {
+                                    const row = document.createElement('div');
+                                    row.style.padding = '10px';
+                                    row.style.borderBottom = '1px solid #eee';
+                                    row.style.display = 'flex';
+                                    row.style.justifyContent = 'space-between';
+                                    row.style.alignItems = 'center';
 
-                                    // Using concatenation to avoid backtick issues
-                                    div.innerHTML = 
-                                        '<div>' +
-                                            '<div style="font-weight: 600; color: #333;">' + name + '</div>' +
-                                            '<div style="font-size: 0.8rem; color: #666;">Type: ' + type + '</div>' +
-                                        '</div>' +
-                                        '<input type="radio" name="selectedPromo" value="' + offerId + '" onchange="selectPromoCandidate(\'' + offerId + '\', \'' + type + '\')">';
+                                    const info = document.createElement('div');
+                                    const nameDiv = document.createElement('div');
+                                    nameDiv.textContent = p.name || p.id || 'Promo';
+                                    nameDiv.style.fontWeight = '600';
                                     
-                                    listContainer.appendChild(div);
+                                    const typeDiv = document.createElement('div');
+                                    typeDiv.textContent = 'Type: ' + (p.type || 'N/A');
+                                    typeDiv.style.fontSize = '0.8rem';
+                                    typeDiv.style.color = '#666';
+
+                                    info.appendChild(nameDiv);
+                                    info.appendChild(typeDiv);
+
+                                    const radio = document.createElement('input');
+                                    radio.type = 'radio';
+                                    radio.name = 'selectedPromo';
+                                    radio.value = p.id;
+                                    // Closure handles escaping safety automatically
+                                    radio.onchange = function() { selectPromoCandidate(p.id, p.type); };
+
+                                    row.appendChild(info);
+                                    row.appendChild(radio);
+                                    list.appendChild(row);
                                 });
                             }
 
-                            function selectPromoCandidate(promoId, promoType) {
-                            document.getElementById('promo-config-section').style.display = 'block';
-                        document.getElementById('btn-join-promo').disabled = false;
+                            function selectPromoCandidate(id, type) {
+                                console.log('Selected', id, type);
+                                document.getElementById('promo-config-section').style.display = 'block';
+                                document.getElementById('btn-join-promo').disabled = false;
                             }
 
-                        function closeAddPromoModal() {
-                            document.getElementById('add-promo-modal').style.display = 'none';
+                            function closeAddPromoModal() {
+                                document.getElementById('add-promo-modal').style.display = 'none';
                             }
 
-                        function submitJoinPromo() {
-                            alert("Join Promo Logic Implementation Pending");
+                            function submitJoinPromo() {
+                                alert('Joining logic pending backend impl.');
                             }
 
-                        function applyListingsSort() {
+                            function applyListingsSort() {
                                 const sortValue = document.getElementById('sortBy').value;
-                        const url = new URL(window.location);
-                        url.searchParams.set('sort', sortValue);
-                        url.searchParams.set('page', '1');
-                        window.location.href = url.toString();
+                                const url = new URL(window.location);
+                                url.searchParams.set('sort', sortValue);
+                                url.searchParams.set('page', '1');
+                                window.location.href = url.toString();
                             }
                     </script>
                     </div >
