@@ -148,7 +148,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.49 - Fix Sort Scope - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.50 - Promo Hover - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -423,7 +423,7 @@ app.get('/listings', async (req, res) => {
                             <td style="text-align: center;">
                                 ${hasPromo ? `
                                     <div class="promo-edit-container" data-item-id="${item.id}" data-promo-id="${item.promotion_id || ''}" data-promo-type="${item.promotion_type || ''}">
-                                        <div class="promo-display">
+                                        <div class="promo-display" title="Promo ID: ${item.promotion_id || 'N/A'} &#013;Type: ${item.promotion_type || 'Unknown'}" style="cursor: help;">
                                             <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">$ <span class="promo-value-text">${currentPrice.toLocaleString('es-AR')}</span></div>
                                             <div style="font-size: 0.7rem; color: #666; background: #e6f7ee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">En Promoción</div>
                                             <button class="edit-price-btn" onclick="editPromoPrice('${item.id}', ${currentPrice})" style="margin-left: 5px;">✏️</button>
@@ -550,8 +550,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.49';
-                                    const footerDescription = 'Listing Manager & Repricer - Fix Sort Scope';
+                                    const version = 'v12.50';
+                                    const footerDescription = 'Listing Manager & Repricer - Promo Hover';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
