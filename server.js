@@ -148,7 +148,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.46 - Fix Sold Qty API - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.47 - Add Sort by Sales - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -301,9 +301,13 @@ app.get('/listings', async (req, res) => {
             const totalItems = row.count;
             const totalPages = Math.ceil(totalItems / limit);
 
-            // Get Items
-            // Default sort: Alphabetical by Name (Title)
-            sql += ` ORDER BY title ASC LIMIT ? OFFSET ?`;
+            // Get Items with dynamic sorting
+            let orderByClause = 'title ASC'; // Default: alphabetical
+            if (sortBy === 'sales') orderByClause = 'sold_quantity DESC';
+            else if (sortBy === 'price_asc') orderByClause = 'price ASC';
+            else if (sortBy === 'price_desc') orderByClause = 'price DESC';
+
+            sql += ` ORDER BY ${orderByClause} LIMIT ? OFFSET ?`;
             params.push(limit, offset);
 
             db.all(sql, params, async (err, rows) => {
@@ -475,6 +479,12 @@ app.get('/listings', async (req, res) => {
                                         <span style="font-weight: 600; color: #333;">${userName}</span>
                                     </div>
                                 </div>
+                                <select id="sortBy" onchange="applyListingsSort()" style="padding: 8px 12px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 0.9rem; cursor: pointer; background: white; font-weight: 500;">
+                                    <option value="name" ${sortBy === 'name' ? 'selected' : ''}>Alfabético</option>
+                                    <option value="sales" ${sortBy === 'sales' ? 'selected' : ''}>Más vendidos</option>
+                                    <option value="price_asc" ${sortBy === 'price_asc' ? 'selected' : ''}>Precio: menor a mayor</option>
+                                    <option value="price_desc" ${sortBy === 'price_desc' ? 'selected' : ''}>Precio: mayor a menor</option>
+                                </select>
                                 <button onclick="syncListings()" id="sync-btn" style="background: white; color: #00a650; border: 1px solid #00a650; padding: 8px 16px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 500; transition: all 0.2s;">
                                     <span>🔄</span> Actualizar
                                 </button>
@@ -539,8 +549,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.46';
-                                    const footerDescription = 'Listing Manager & Repricer - Fix Sold Qty API';
+                                    const version = 'v12.47';
+                                    const footerDescription = 'Listing Manager & Repricer - Add Sort by Sales';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -854,10 +864,10 @@ app.get('/promotions', async (req, res) => {
 
         // Pagination and search setup (moved outside if block for scope)
         const page = parseInt(req.query.page) || 1;
-        const perPage = 50;
-        const offset = (page - 1) * perPage;
-        const searchQuery = req.query.search || '';
-        const sortBy = req.query.sort || 'date';
+        const limit = 50;
+        const offset = (page - 1) * limit;
+        const searchFilter = req.query.search || '';
+        const sortBy = req.query.sort || 'name';
 
         // Build WHERE clause for search
         let whereClause = 'user_id = ?';
