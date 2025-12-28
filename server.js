@@ -462,7 +462,12 @@ app.get('/listings', async (req, res) => {
                                             <button class="cancel-price-btn" onclick="cancelPromoEdit('${item.id}')">✗</button>
                                         </div>
                                     </div>
-                                ` : '<span style="color: #ccc;">---</span>'}
+                                ` : `
+                                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;">
+                                        <span style="color: #ccc;">---</span>
+                                        <button class="add-promo-btn" onclick="openAddPromoModal('${item.id}', ${item.price})" title="Agregar Promoción" style="border: none; background: #e6f7ee; color: #00a650; font-weight: bold; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px;">+</button>
+                                    </div>
+                                `}
                             </td>
                             <td class="net-income-cell" style="font-weight: 600; color: ${netIncomeColor};">
                                 ${netIncomeFormatted}
@@ -605,8 +610,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.60';
-                                    const footerDescription = 'Listing Manager & Repricer - Add Promo UI';
+                                    const version = 'v12.61';
+                                    const footerDescription = 'Listing Manager & Repricer - Fix Button Visibility';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
