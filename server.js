@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.71 - Promo Sync & Guidelines - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.72 - Final Join Logic - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -1015,10 +1015,62 @@ app.get('/listings', async (req, res) => {
 
                             function closeAddPromoModal() {
                                 document.getElementById('add-promo-modal').style.display = 'none';
+                                document.body.style.overflow = ''; // Restore scrolling
                             }
 
-                            function submitJoinPromo() {
-                                alert('Joining logic pending backend impl.');
+                            async function submitJoinPromo() {
+                                const modal = document.getElementById('add-promo-modal');
+                                const btn = document.getElementById('btn-join-promo');
+                                const priceInput = document.getElementById('new-promo-price');
+                                
+                                const itemId = modal.dataset.itemId;
+                                const promoId = modal.dataset.selectedPromoId;
+                                const promoType = modal.dataset.selectedPromoType;
+                                const dealPrice = parseFloat(priceInput.value);
+
+                                if (!promoId || !promoType) {
+                                    alert('Por favor selecciona una promoción');
+                                    return;
+                                }
+
+                                if (document.getElementById('promo-config-section').style.display !== 'none' && !dealPrice) {
+                                    alert('Por favor ingresa un precio para la oferta.');
+                                    priceInput.focus();
+                                    return;
+                                }
+
+                                btn.disabled = true;
+                                btn.textContent = 'Uniéndose...';
+
+                                try {
+                                    const res = await fetch('/apply-promotion', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            item_id: itemId,
+                                            promotion_id: promoId,
+                                            promotion_type: promoType,
+                                            deal_price: dealPrice
+                                        })
+                                    });
+
+                                    const data = await res.json();
+                                    
+                                    if (data.success) {
+                                        alert('¡Éxito! Oferta aplicada correctamente.');
+                                        closeAddPromoModal();
+                                        window.location.reload(); 
+                                    } else {
+                                        const errMsg = data.details?.message || data.error || 'Error desconocido';
+                                        alert('Error al unirse: ' + errMsg);
+                                        console.error(data);
+                                    }
+                                } catch (e) {
+                                    alert('Error de red: ' + e.message);
+                                } finally {
+                                    btn.disabled = false;
+                                    btn.textContent = 'Unirse';
+                                }
                             }
 
                             function applyListingsSort() {
