@@ -156,7 +156,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.51 - Promo Name Tooltip - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.52 - Fix Column Layout - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -428,6 +428,7 @@ app.get('/listings', async (req, res) => {
                                     </div>
                                 </div>
                             </td>
+                            <td style="text-align: center;">
                                 ${hasPromo ? `
                                     <div class="promo-edit-container" data-item-id="${item.id}" data-promo-id="${item.promotion_id || ''}" data-promo-type="${item.promotion_type || ''}">
                                         <div class="promo-display" title="Promo: ${item.promotion_name || item.promotion_id || 'N/A'} &#013;Type: ${item.promotion_type || 'Unknown'}" style="cursor: help;">
@@ -557,8 +558,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.51';
-                                    const footerDescription = 'Listing Manager & Repricer - Promo Name Tooltip';
+                                    const version = 'v12.52';
+                                    const footerDescription = 'Listing Manager & Repricer - Fix Column Layout';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
