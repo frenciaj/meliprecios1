@@ -23,43 +23,45 @@ const db = new sqlite3.Database(dbPath, (err) => {
     }
 });
 
-db.run(`CREATE TABLE IF NOT EXISTS items_v14 (
-    id TEXT,
-    user_id TEXT,
-    title TEXT,
-    thumbnail TEXT,
-    price REAL,
-    currency_id TEXT,
-    available_quantity INTEGER,
-    original_price REAL,
-    permalink TEXT,
-    status TEXT,
-    listing_type_id TEXT,
-    sale_price_amount REAL,
-    sale_price_regular_amount REAL,
-    promotion_id TEXT,
-    promotion_type TEXT,
-    price_to_win REAL,
-    last_updated DATETIME,
-    free_shipping INTEGER,
-    brand TEXT,
-    sold_quantity INTEGER DEFAULT 0,
-    promotion_name TEXT,
-    PRIMARY KEY (id, user_id)
-)`);
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS items_v14 (
+        id TEXT,
+        user_id TEXT,
+        title TEXT,
+        thumbnail TEXT,
+        price REAL,
+        currency_id TEXT,
+        available_quantity INTEGER,
+        original_price REAL,
+        permalink TEXT,
+        status TEXT,
+        listing_type_id TEXT,
+        sale_price_amount REAL,
+        sale_price_regular_amount REAL,
+        promotion_id TEXT,
+        promotion_type TEXT,
+        price_to_win REAL,
+        last_updated DATETIME,
+        free_shipping INTEGER,
+        brand TEXT,
+        sold_quantity INTEGER DEFAULT 0,
+        promotion_name TEXT,
+        PRIMARY KEY (id, user_id)
+    )`);
 
-// Migration: Add sold_quantity column if it doesn't exist
-db.run(`ALTER TABLE items_v14 ADD COLUMN sold_quantity INTEGER DEFAULT 0`, (err) => {
-    if (err && !err.message.includes('duplicate column')) {
-        console.error('[Migration] Error adding sold_quantity:', err.message);
-    }
-});
+    // Migration: Add sold_quantity column if it doesn't exist
+    db.run(`ALTER TABLE items_v14 ADD COLUMN sold_quantity INTEGER DEFAULT 0`, (err) => {
+        if (err && !err.message.includes('duplicate column')) {
+            console.error('[Migration] Error adding sold_quantity:', err.message);
+        }
+    });
 
-// Migration: Add promotion_name column if it doesn't exist
-db.run(`ALTER TABLE items_v14 ADD COLUMN promotion_name TEXT`, (err) => {
-    if (err && !err.message.includes('duplicate column')) {
-        console.error('[Migration] Error adding promotion_name:', err.message);
-    }
+    // Migration: Add promotion_name column if it doesn't exist
+    db.run(`ALTER TABLE items_v14 ADD COLUMN promotion_name TEXT`, (err) => {
+        if (err && !err.message.includes('duplicate column')) {
+            console.error('[Migration] Error adding promotion_name:', err.message);
+        }
+    });
 });
 
 
@@ -156,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.63 - syntax Fix - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.64 - DB Init Fix - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -931,7 +933,7 @@ app.get('/listings', async (req, res) => {
 
     } catch (error) {
         console.error('Listings Error:', error.message);
-        res.send(renderPage('Error', `< p > Error fetching listings: ${ error.message }</p > `, 'listings'));
+        res.send(renderPage('Error', `< p > Error fetching listings: ${error.message}</p > `, 'listings'));
     }
 });
 
@@ -945,39 +947,39 @@ app.post('/update-price', async (req, res) => {
 
     try {
         // 1. Get User ID
-        const userRes = await axios.get('https://api.mercadolibre.com/users/me', { headers: { Authorization: `Bearer ${ accessToken } ` } });
+        const userRes = await axios.get('https://api.mercadolibre.com/users/me', { headers: { Authorization: `Bearer ${accessToken} ` } });
         const userId = userRes.data.id;
 
-        console.log(`[Price Update]Item: ${ itemId }, New Price: ${ newPrice }, User: ${ userId } `);
+        console.log(`[Price Update]Item: ${itemId}, New Price: ${newPrice}, User: ${userId} `);
 
         // 2. Update API with explicit timeout
         await axios.put(`https://api.mercadolibre.com/items/${itemId}`, { price: parseFloat(newPrice) }, {
-                headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-                timeout: 5000 // Reduced to 5s to catch latency early
-            });
-            console.log(`[Price Update] API Success for ${itemId}`);
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            timeout: 5000 // Reduced to 5s to catch latency early
+        });
+        console.log(`[Price Update] API Success for ${itemId}`);
 
-            // 3. Update Local DB (wrapped in Promise to ensure completion)
-            await new Promise((resolve, reject) => {
-                db.run(`UPDATE items_v14 SET price = ?, last_updated = ? WHERE id = ? AND user_id = ?`,
-                    [parseFloat(newPrice), new Date().toISOString(), itemId, userId],
-                    (err) => {
-                        if (err) {
-                            console.error('Local DB Update Error:', err);
-                            reject(err);
-                        } else {
-                            console.log(`[Price Update] DB Updated for ${itemId}`);
-                            resolve();
-                        }
+        // 3. Update Local DB (wrapped in Promise to ensure completion)
+        await new Promise((resolve, reject) => {
+            db.run(`UPDATE items_v14 SET price = ?, last_updated = ? WHERE id = ? AND user_id = ?`,
+                [parseFloat(newPrice), new Date().toISOString(), itemId, userId],
+                (err) => {
+                    if (err) {
+                        console.error('Local DB Update Error:', err);
+                        reject(err);
+                    } else {
+                        console.log(`[Price Update] DB Updated for ${itemId}`);
+                        resolve();
                     }
-                );
-            });
+                }
+            );
+        });
 
-            return res.json({ success: true });
-        } catch (error) {
-            return res.status(500).json({ success: false, error: error.message });
-        }
-    });
+        return res.json({ success: true });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 // Update item quantity
 app.post('/update-quantity', async (req, res) => {
