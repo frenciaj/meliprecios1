@@ -829,7 +829,7 @@ app.get('/listings', async (req, res) => {
 
                                 try {
                                     // Use debug-promo as proxy for "get eligible" for now
-                                    const res = await fetch(`/debug-promo/${itemId}`);
+                                    const res = await fetch('/debug-promo/' + itemId);
                                     const promos = await res.json();
                                     
                                     // DEBUG: Dump raw JSON to check structure
