@@ -148,7 +148,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.40 - Optimistic Status - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.41 - Fix Crash - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -538,8 +538,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.40';
-                                    const footerDescription = 'Listing Manager & Repricer - Optimistic Status';
+                                    const version = 'v12.41';
+                                    const footerDescription = 'Listing Manager & Repricer - Fix Crash';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1673,27 +1673,27 @@ app.post('/sync-listings', async (req, res) => {
             db.serialize(() => {
                 db.run("BEGIN TRANSACTION");
                 processedItems.forEach(item => {
-                    stmt.run(userId, item.id, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping, item.brand, item.sold_quantity);
-                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping, item.brand);
+                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping, item.brand, item.sold_quantity);
                 });
-                db.run("COMMIT");
             });
-            stmt.finalize();
+            db.run("COMMIT");
+        });
+stmt.finalize();
 
-            processedCount += processedItems.length;
-            console.log(`[Sync] Processed ${processedCount}/${itemIds.length} items`);
+processedCount += processedItems.length;
+console.log(`[Sync] Processed ${processedCount}/${itemIds.length} items`);
         }
 
-        res.json({ success: true, count: processedCount });
+res.json({ success: true, count: processedCount });
 
     } catch (error) {
-        console.error('Sync Error:', error.response?.data || error.message);
-        res.status(500).json({
-            success: false,
-            error: error.response?.data?.message || error.message || 'Unknown Sync Error',
-            details: error.response?.data
-        });
-    }
+    console.error('Sync Error:', error.response?.data || error.message);
+    res.status(500).json({
+        success: false,
+        error: error.response?.data?.message || error.message || 'Unknown Sync Error',
+        details: error.response?.data
+    });
+}
 });
 
 app.get('/debug-suggestions/:id', async (req, res) => {
