@@ -43,8 +43,17 @@ db.run(`CREATE TABLE IF NOT EXISTS items_v14 (
     last_updated DATETIME,
     free_shipping INTEGER,
     brand TEXT,
+    sold_quantity INTEGER DEFAULT 0,
     PRIMARY KEY (id, user_id)
 )`);
+
+// Migration: Add sold_quantity column if it doesn't exist
+db.run(`ALTER TABLE items_v14 ADD COLUMN sold_quantity INTEGER DEFAULT 0`, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+        console.error('[Migration] Error adding sold_quantity:', err.message);
+    }
+});
+
 
 // Ensure DB is closed on exit
 process.on('SIGINT', () => {
@@ -139,7 +148,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.44 - Fixed Rollback - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.45 - Add Sold Qty - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -389,8 +398,9 @@ app.get('/listings', async (req, res) => {
                             <td><img src="${item.thumbnail}" class="thumbnail"></td>
                             <td>
                                 <div style="font-weight: 500;">${item.title}</div>
-                                <div style="font-size: 0.8rem; color: #999;">ID: ${item.id}</div>
-                                <div style="font-size: 0.8rem; color: #666; margin-top: 4px;">${item.brand ? `Marca: <strong>${item.brand}</strong>` : ''}</div>
+                                <div style="font-size: 0.75rem; color: #999; margin-top: 4px;">
+                                    ID: ${item.id} | Marca: ${item.brand || 'N/A'} | Vendidos: ${item.sold_quantity || 0}
+                                </div>
                             </td>
                             <td>
                                 <div class="price-edit-container" data-item-id="${item.id}">
@@ -529,8 +539,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.44';
-                                    const footerDescription = 'Listing Manager & Repricer - Fixed Rollback';
+                                    const version = 'v12.45';
+                                    const footerDescription = 'Listing Manager & Repricer - Add Sold Qty';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1608,6 +1618,7 @@ app.post('/sync-listings', async (req, res) => {
                 // C. Extra Data
                 const freeShipping = item.shipping?.free_shipping ? 1 : 0;
                 const brandAttr = item.attributes?.find(a => a.id === 'BRAND')?.value_name || '';
+                const soldQty = item.sold_quantity || 0;
 
                 return {
                     id: item.id,
@@ -1627,19 +1638,20 @@ app.post('/sync-listings', async (req, res) => {
                     price_to_win: 0, // Placeholder
                     last_updated: new Date().toISOString(),
                     free_shipping: freeShipping,
-                    brand: brandAttr
+                    brand: brandAttr,
+                    sold_quantity: soldQty
                 };
             });
 
             const processedItems = (await Promise.all(strategies)).filter(i => i !== null);
 
             // D. Upsert to DB with user_id
-            const stmt = db.prepare(`INSERT OR REPLACE INTO items_v14 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping, brand) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            const stmt = db.prepare(`INSERT OR REPLACE INTO items_v14 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping, brand, sold_quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
             db.serialize(() => {
                 db.run("BEGIN TRANSACTION");
                 processedItems.forEach(item => {
-                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping, item.brand);
+                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping, item.brand, item.sold_quantity);
                 });
                 db.run("COMMIT");
             });
