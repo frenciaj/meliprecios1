@@ -148,7 +148,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.48 - Fix Sort Function - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.49 - Fix Sort Scope - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -549,8 +549,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.48';
-                                    const footerDescription = 'Listing Manager & Repricer - Fix Sort Function';
+                                    const version = 'v12.49';
+                                    const footerDescription = 'Listing Manager & Repricer - Fix Sort Scope';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
