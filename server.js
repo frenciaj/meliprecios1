@@ -156,7 +156,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.56 - Inline Promo Name - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.60 - Add Promo UI - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -270,6 +270,22 @@ app.get('/callback', async (req, res) => {
             'Authentication was rejected by Mercado Libre.',
             { apiError: error.response ? error.response.data : error.message }
         ));
+    }
+});
+
+app.get('/debug-promo/:id', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+    if (!accessToken) return res.status(401).json({ error: 'No access token' });
+
+    try {
+        const { id } = req.params;
+        const promoRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${id}`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        res.json(promoRes.data);
+    } catch (error) {
+        console.error('Debug Promo Error:', error.response?.data || error.message);
+        res.status(500).json({ error: error.message, details: error.response?.data });
     }
 });
 
@@ -432,7 +448,10 @@ app.get('/listings', async (req, res) => {
                                 ${hasPromo ? `
                                     <div class="promo-edit-container" data-item-id="${item.id}" data-promo-id="${item.promotion_id || ''}" data-promo-type="${item.promotion_type || ''}">
                                         <div class="promo-display">
-                                            <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">$ <span class="promo-value-text">${currentPrice.toLocaleString('es-AR')}</span></div>
+                                            <div style="display: flex; align-items: center; gap: 5px;">
+                                                <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">$ <span class="promo-value-text">${currentPrice.toLocaleString('es-AR')}</span></div>
+                                                <button class="add-promo-btn" onclick="openAddPromoModal('${item.id}', ${item.price})" title="Agregar Promoción" style="border: none; background: #e6f7ee; color: #00a650; font-weight: bold; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px;">+</button>
+                                            </div>
                                             <div style="font-size: 0.7rem; color: #666; background: #e6f7ee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">En Promoción</div>
                                             <button class="edit-price-btn" onclick="editPromoPrice('${item.id}', ${currentPrice})" style="margin-left: 5px;">✏️</button>
                                             ${item.promotion_name ? `<div style="font-size: 0.75rem; color: #4da6ff; margin-top: 6px; line-height: 1.2; max-width: 180px; margin-left: auto; margin-right: auto;">${item.promotion_name}</div>` : ''}
@@ -550,6 +569,33 @@ app.get('/listings', async (req, res) => {
                                 ${page < totalPages ? `<a href="/listings?page=${page + 1}&limit=${limit}&q=${req.query.q || ''}&status=${statusFilter}" style="padding: 8px 16px; background: #eee; border-radius: 4px; text-decoration: none; color: #333;">Next &raquo;</a>` : ''}
                             </div>
                         `}
+                        
+                        <!-- Add Promo Modal -->
+                        <div id="add-promo-modal" class="modal-overlay">
+                            <div class="modal-box">
+                                <div class="modal-header">
+                                    <div class="modal-title">Agregar Promoción</div>
+                                    <button class="close-modal" onclick="closeAddPromoModal()">×</button>
+                                </div>
+                                <div id="promo-candidates-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;">
+                                    <div style="text-align: center; color: #666; padding: 20px;">Cargando promociones...</div>
+                                </div>
+                                <div id="promo-config-section" style="display: none; border-top: 1px solid #eee; padding-top: 15px;">
+                                    <h3 style="font-size: 1rem; margin-bottom: 10px;">Configurar Oferta</h3>
+                                    <div class="input-group">
+                                        <label class="input-label">Nuevo Precio</label>
+                                        <div class="modal-input-wrapper">
+                                            <input type="number" id="new-promo-price" class="modal-input" placeholder="0.00">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button class="btn-modal btn-modal-cancel" onclick="closeAddPromoModal()">Cancelar</button>
+                                    <button class="btn-modal btn-modal-confirm" onclick="submitJoinPromo()" disabled id="btn-join-promo">Unirse</button>
+                                </div>
+                            </div>
+                        </div>
+
 
                         <script>
                             async function syncListings() {
@@ -559,8 +605,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.53';
-                                    const footerDescription = 'Listing Manager & Repricer - Styled Promo Tooltip';
+                                    const version = 'v12.60';
+                                    const footerDescription = 'Listing Manager & Repricer - Add Promo UI';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -758,6 +804,78 @@ app.get('/listings', async (req, res) => {
                                     btn.disabled = false;
                                     btn.innerHTML = '✓';
                                 }
+                            }
+
+                            // --- Add Promotion Logic ---
+                            async function openAddPromoModal(itemId, currentPrice) {
+                                const modal = document.getElementById('add-promo-modal');
+                                const listContainer = document.getElementById('promo-candidates-list');
+                                const configSection = document.getElementById('promo-config-section');
+                                const joinBtn = document.getElementById('btn-join-promo');
+                                
+                                modal.style.display = 'flex';
+                                listContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">Cargando promociones...</div>';
+                                configSection.style.display = 'none';
+                                joinBtn.disabled = true;
+                                
+                                // Store current item context
+                                modal.dataset.itemId = itemId;
+                                modal.dataset.originalPrice = currentPrice;
+
+                                try {
+                                    // Use debug-promo as proxy for "get eligible" for now
+                                    const res = await fetch(\`/debug-promo/\${itemId}\`);
+                                    const promos = await res.json();
+                                    
+                                    renderPromoCandidates(promos);
+                                } catch (error) {
+                                    listContainer.innerHTML = \`<div style="color: red; text-align: center;">Error al cargar promociones: \${error.message}</div>\`;
+                                }
+                            }
+
+                            function renderPromoCandidates(promos) {
+                                const listContainer = document.getElementById('promo-candidates-list');
+                                listContainer.innerHTML = '';
+
+                                if (!promos || promos.length === 0) {
+                                    listContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No hay promociones disponibles para este ítem.</div>';
+                                    return;
+                                }
+
+                                const candidates = Array.isArray(promos) ? promos : [promos];
+
+                                candidates.forEach(promo => {
+                                    const div = document.createElement('div');
+                                    div.style.padding = '10px';
+                                    div.style.borderBottom = '1px solid #eee';
+                                    div.style.cursor = 'pointer';
+                                    div.style.display = 'flex';
+                                    div.style.justifyContent = 'space-between';
+                                    div.style.alignItems = 'center';
+                                    
+                                    // Basic handling of promo object structure (needs refinement based on real data)
+                                    div.innerHTML = \`
+                                        <div>
+                                            <div style="font-weight: 600; color: #333;">\${promo.name || promo.id || 'Promoción'}</div>
+                                            <div style="font-size: 0.8rem; color: #666;">Type: \${promo.type || 'N/A'}</div>
+                                        </div>
+                                        <input type="radio" name="selectedPromo" value="\${promo.id}" onchange="selectPromoCandidate('\${promo.id}', '\${promo.type}')">
+                                    \`;
+                                    listContainer.appendChild(div);
+                                });
+                            }
+
+                            function selectPromoCandidate(promoId, promoType) {
+                                document.getElementById('promo-config-section').style.display = 'block';
+                                document.getElementById('btn-join-promo').disabled = false;
+                            }
+
+                            function closeAddPromoModal() {
+                                document.getElementById('add-promo-modal').style.display = 'none';
+                            }
+
+                            function submitJoinPromo() {
+                                alert("Join Promo Logic Implementation Pending");
                             }
 
                             function applyListingsSort() {
