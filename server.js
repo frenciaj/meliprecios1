@@ -844,7 +844,7 @@ app.get('/listings', async (req, res) => {
 
                                     renderPromoCandidates(promos);
                                 } catch (error) {
-                                    listContainer.innerHTML = `< div style = "color: red; text-align: center;" > Error al cargar promociones: ${ error.message }</div > `;
+                                    listContainer.innerHTML = '<div style="color: red; text-align: center;">Error al cargar promociones: ' + error.message + '</div>';
                                 }
                             }
 
@@ -889,18 +889,19 @@ app.get('/listings', async (req, res) => {
                                     const type = promo.type || 'N/A';
                                     const offerId = promo.id || '';
 
-                                    div.innerHTML = `
-                    < div >
-                                            <div style="font-weight: 600; color: #333;">${name}</div>
-                                            <div style="font-size: 0.8rem; color: #666;">Type: ${type}</div>
-                                        </div >
-                    <input type="radio" name="selectedPromo" value="${offerId}" onchange="selectPromoCandidate('${offerId}', '${type}')">
-                        `;
-                        listContainer.appendChild(div);
+                                    // Using concatenation to avoid backtick issues
+                                    div.innerHTML = 
+                                        '<div>' +
+                                            '<div style="font-weight: 600; color: #333;">' + name + '</div>' +
+                                            '<div style="font-size: 0.8rem; color: #666;">Type: ' + type + '</div>' +
+                                        '</div>' +
+                                        '<input type="radio" name="selectedPromo" value="' + offerId + '" onchange="selectPromoCandidate(\'' + offerId + '\', \'' + type + '\')">';
+                                    
+                                    listContainer.appendChild(div);
                                 });
                             }
 
-                        function selectPromoCandidate(promoId, promoType) {
+                            function selectPromoCandidate(promoId, promoType) {
                             document.getElementById('promo-config-section').style.display = 'block';
                         document.getElementById('btn-join-promo').disabled = false;
                             }
