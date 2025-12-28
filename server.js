@@ -156,7 +156,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.55 - Simplified Promo Tooltip - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.56 - Inline Promo Name - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -412,7 +412,7 @@ app.get('/listings', async (req, res) => {
                             <td>
                                 <div style="font-weight: 500;">${item.title}</div>
                                 <div style="font-size: 0.75rem; color: #999; margin-top: 4px;">
-                                    ID: ${item.id} | Marca: ${item.brand || 'N/A'} | Vendidos: ${item.sold_quantity || 0}
+                                    ID: ${item.id} | Marca: ${item.brand || 'N/A'} | <span style="font-weight: 700; color: #666;">Vendidos: ${item.sold_quantity || 0}</span>
                                 </div>
                             </td>
                             <td>
@@ -431,15 +431,11 @@ app.get('/listings', async (req, res) => {
                             <td style="text-align: center;">
                                 ${hasPromo ? `
                                     <div class="promo-edit-container" data-item-id="${item.id}" data-promo-id="${item.promotion_id || ''}" data-promo-type="${item.promotion_type || ''}">
-                                        <div class="promo-display promo-cell">
+                                        <div class="promo-display">
                                             <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">$ <span class="promo-value-text">${currentPrice.toLocaleString('es-AR')}</span></div>
                                             <div style="font-size: 0.7rem; color: #666; background: #e6f7ee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">En Promoción</div>
                                             <button class="edit-price-btn" onclick="editPromoPrice('${item.id}', ${currentPrice})" style="margin-left: 5px;">✏️</button>
-                                            
-                                            <div class="promo-tooltip">
-                                                <div class="tooltip-title">Detalle de Promoción</div>
-                                                <div class="tooltip-row"><span class="tooltip-label">Nombre:</span><span class="tooltip-value" style="color: #4da6ff;">${item.promotion_name || 'N/A'}</span></div>
-                                            </div>
+                                            ${item.promotion_name ? `<div style="font-size: 0.75rem; color: #4da6ff; margin-top: 6px; line-height: 1.2; max-width: 180px; margin-left: auto; margin-right: auto;">${item.promotion_name}</div>` : ''}
                                         </div>
                                         <div class="promo-edit-form" style="display: none; align-items: center; justify-content: center; gap: 5px; margin-top: 5px;">
                                             <input type="number" class="promo-input" value="${currentPrice}" step="0.01" style="width: 80px; padding: 4px;" onkeydown="if(event.key==='Enter') savePromoPrice('${item.id}')" />
