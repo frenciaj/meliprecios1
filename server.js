@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.67 - Safe Modal JS - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.68 - Fix Promo API V2 - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -281,7 +281,7 @@ app.get('/debug-promo/:id', async (req, res) => {
 
     try {
         const { id } = req.params;
-        const promoRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${id}`, {
+        const promoRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${id}?app_version=v2`, {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
         res.json(promoRes.data);
