@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.75 - Syntax Fix - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.76 - Syntax Fix V2 - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -964,10 +964,9 @@ app.get('/listings', async (req, res) => {
                                     const offPercent = (suggestedValue / originalPrice) * 100;
                                     
                                     document.getElementById('guideline-suggested').innerHTML = 
-                                        `Target: <strong>$${ targetPrice.toLocaleString('es-AR')
-            }</strong > ` +
-                                        `< span style = "color: #00a650;" > (${ Math.round(offPercent) } % OFF)</span > ` +
-                                        `< small style = "color: #999;" > (Desc: $${ suggestedValue.toLocaleString('es-AR') })</small > `;
+                                        'Target: <strong>$' + targetPrice.toLocaleString('es-AR') + '</strong> ' +
+                                        '<span style="color: #00a650;">(' + Math.round(offPercent) + '% OFF)</span> ' +
+                                        '<small style="color: #999;">(Desc: $' + suggestedValue.toLocaleString('es-AR') + ')</small>';
                                 } else {
                                      document.getElementById('guideline-suggested').textContent = '-';
                                 }
@@ -1087,14 +1086,14 @@ app.get('/listings', async (req, res) => {
                     </div >
                     `;
 
-        res.send(renderPage('My Listings', content, 'listings'));
-    });
+                res.send(renderPage('My Listings', content, 'listings'));
+            });
         });
 
     } catch (error) {
-    console.error('Listings Error:', error.message);
-    res.send(renderPage('Error', `< p > Error fetching listings: ${error.message}</p > `, 'listings'));
-}
+        console.error('Listings Error:', error.message);
+        res.send(renderPage('Error', `< p > Error fetching listings: ${error.message}</p > `, 'listings'));
+    }
 });
 
 
