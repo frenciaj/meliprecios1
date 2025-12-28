@@ -156,7 +156,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.52 - Fix Column Layout - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.53 - Styled Promo Tooltip - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -431,10 +431,18 @@ app.get('/listings', async (req, res) => {
                             <td style="text-align: center;">
                                 ${hasPromo ? `
                                     <div class="promo-edit-container" data-item-id="${item.id}" data-promo-id="${item.promotion_id || ''}" data-promo-type="${item.promotion_type || ''}">
-                                        <div class="promo-display" title="Promo: ${item.promotion_name || item.promotion_id || 'N/A'} &#013;Type: ${item.promotion_type || 'Unknown'}" style="cursor: help;">
+                                        <div class="promo-display promo-cell">
                                             <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">$ <span class="promo-value-text">${currentPrice.toLocaleString('es-AR')}</span></div>
                                             <div style="font-size: 0.7rem; color: #666; background: #e6f7ee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">En Promoción</div>
                                             <button class="edit-price-btn" onclick="editPromoPrice('${item.id}', ${currentPrice})" style="margin-left: 5px;">✏️</button>
+                                            
+                                            <div class="promo-tooltip">
+                                                <div class="tooltip-title">Detalle de Promoción</div>
+                                                <div class="tooltip-row"><span class="tooltip-label">Nombre:</span><span class="tooltip-value" style="color: #4da6ff;">${item.promotion_name || 'N/A'}</span></div>
+                                                <div class="tooltip-row"><span class="tooltip-label">ID:</span><span class="tooltip-value">${item.promotion_id || 'N/A'}</span></div>
+                                                <div class="tooltip-row"><span class="tooltip-label">Tipo:</span><span class="tooltip-value">${item.promotion_type || 'Unknown'}</span></div>
+                                                <div class="tooltip-row"><span class="tooltip-label">Precio Original:</span><span class="tooltip-value strike">$ ${item.original_price ? item.original_price.toLocaleString('es-AR') : '---'}</span></div>
+                                            </div>
                                         </div>
                                         <div class="promo-edit-form" style="display: none; align-items: center; justify-content: center; gap: 5px; margin-top: 5px;">
                                             <input type="number" class="promo-input" value="${currentPrice}" step="0.01" style="width: 80px; padding: 4px;" onkeydown="if(event.key==='Enter') savePromoPrice('${item.id}')" />
@@ -558,8 +566,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.52';
-                                    const footerDescription = 'Listing Manager & Repricer - Fix Column Layout';
+                                    const version = 'v12.53';
+                                    const footerDescription = 'Listing Manager & Repricer - Styled Promo Tooltip';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
