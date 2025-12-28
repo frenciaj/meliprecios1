@@ -282,6 +282,7 @@ app.get('/listings', async (req, res) => {
         const offset = (page - 1) * limit;
         const search = req.query.q ? `%${req.query.q}%` : '%';
         const statusFilter = req.query.status || 'all';
+        const sortBy = req.query.sort || 'name';
 
         // Build SQL Query
         let sql = `SELECT * FROM items_v14 WHERE user_id = ? AND (title LIKE ? OR id LIKE ? OR brand LIKE ?)`;
