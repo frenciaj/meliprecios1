@@ -44,6 +44,7 @@ db.run(`CREATE TABLE IF NOT EXISTS items_v14 (
     free_shipping INTEGER,
     brand TEXT,
     sold_quantity INTEGER DEFAULT 0,
+    promotion_name TEXT,
     PRIMARY KEY (id, user_id)
 )`);
 
@@ -51,6 +52,13 @@ db.run(`CREATE TABLE IF NOT EXISTS items_v14 (
 db.run(`ALTER TABLE items_v14 ADD COLUMN sold_quantity INTEGER DEFAULT 0`, (err) => {
     if (err && !err.message.includes('duplicate column')) {
         console.error('[Migration] Error adding sold_quantity:', err.message);
+    }
+});
+
+// Migration: Add promotion_name column if it doesn't exist
+db.run(`ALTER TABLE items_v14 ADD COLUMN promotion_name TEXT`, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+        console.error('[Migration] Error adding promotion_name:', err.message);
     }
 });
 
@@ -148,7 +156,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.50 - Promo Hover - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.51 - Promo Name Tooltip - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -420,10 +428,9 @@ app.get('/listings', async (req, res) => {
                                     </div>
                                 </div>
                             </td>
-                            <td style="text-align: center;">
                                 ${hasPromo ? `
                                     <div class="promo-edit-container" data-item-id="${item.id}" data-promo-id="${item.promotion_id || ''}" data-promo-type="${item.promotion_type || ''}">
-                                        <div class="promo-display" title="Promo ID: ${item.promotion_id || 'N/A'} &#013;Type: ${item.promotion_type || 'Unknown'}" style="cursor: help;">
+                                        <div class="promo-display" title="Promo: ${item.promotion_name || item.promotion_id || 'N/A'} &#013;Type: ${item.promotion_type || 'Unknown'}" style="cursor: help;">
                                             <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">$ <span class="promo-value-text">${currentPrice.toLocaleString('es-AR')}</span></div>
                                             <div style="font-size: 0.7rem; color: #666; background: #e6f7ee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">En Promoción</div>
                                             <button class="edit-price-btn" onclick="editPromoPrice('${item.id}', ${currentPrice})" style="margin-left: 5px;">✏️</button>
@@ -550,8 +557,8 @@ app.get('/listings', async (req, res) => {
                                 btn.innerHTML = '⏳ Syncing...';
                                 
                                 try {
-                                    const version = 'v12.50';
-                                    const footerDescription = 'Listing Manager & Repricer - Promo Hover';
+                                    const version = 'v12.51';
+                                    const footerDescription = 'Listing Manager & Repricer - Promo Name Tooltip';
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
@@ -1603,6 +1610,7 @@ app.post('/sync-listings', async (req, res) => {
                 let saleOriginal = null;
                 let promoId = null;
                 let promoType = null;
+                let promoName = null;
 
                 try {
                     // Fetch active promotion from seller-promotions endpoint
@@ -1615,9 +1623,10 @@ app.post('/sync-listings', async (req, res) => {
                     if (activePromo) {
                         promoId = activePromo.id;
                         promoType = activePromo.type;
+                        promoName = activePromo.name || activePromo.campaign_name || null;
                         salePrice = activePromo.price;
                         saleOriginal = activePromo.original_price;
-                        console.log(`[Sync] Found active promo for ${item.id}: ${promoId} (${promoType})`);
+                        console.log(`[Sync] Found active promo for ${item.id}: ${promoId} (${promoType}) name: ${promoName}`);
                     } else {
                         // Fallback to sale_price endpoint if no active promo found
                         const spRes = await axios.get(`https://api.mercadolibre.com/items/${item.id}/sale_price`, {
@@ -1628,6 +1637,7 @@ app.post('/sync-listings', async (req, res) => {
                             saleOriginal = spRes.data.regular_amount;
                             promoId = spRes.data.metadata?.promotion_id;
                             promoType = spRes.data.metadata?.promotion_type;
+                            promoName = spRes.data.metadata?.name || spRes.data.metadata?.campaign_name || null;
                         }
                     }
                 } catch (e) {
@@ -1654,6 +1664,7 @@ app.post('/sync-listings', async (req, res) => {
                     sale_price_regular_amount: saleOriginal,
                     promotion_id: promoId,
                     promotion_type: promoType,
+                    promotion_name: promoName,
                     price_to_win: 0, // Placeholder
                     last_updated: new Date().toISOString(),
                     free_shipping: freeShipping,
@@ -1665,12 +1676,12 @@ app.post('/sync-listings', async (req, res) => {
             const processedItems = (await Promise.all(strategies)).filter(i => i !== null);
 
             // D. Upsert to DB with user_id
-            const stmt = db.prepare(`INSERT OR REPLACE INTO items_v14 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping, brand, sold_quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            const stmt = db.prepare(`INSERT OR REPLACE INTO items_v14 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping, brand, sold_quantity, promotion_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
             db.serialize(() => {
                 db.run("BEGIN TRANSACTION");
                 processedItems.forEach(item => {
-                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping, item.brand, item.sold_quantity);
+                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping, item.brand, item.sold_quantity, item.promotion_name);
                 });
                 db.run("COMMIT");
             });
