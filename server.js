@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.73 - UI Polish - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.74 - Fix Suggested Calc - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -954,13 +954,20 @@ app.get('/listings', async (req, res) => {
                                 document.getElementById('guideline-original').textContent = '$ ' + originalPrice.toLocaleString('es-AR');
                                 
                                 // Suggested?
-                                let suggested = 0;
-                                if (promo.min_discounted_price) suggested = promo.min_discounted_price;
-                                // Add more logic here if API provides explicit suggested price
+                                let suggestedValue = 0;
+                                if (promo.min_discounted_price) suggestedValue = promo.min_discounted_price;
                                 
-                                if (suggested > 0) {
-                                    const off = originalPrice > 0 ? Math.round(((originalPrice - suggested) / originalPrice) * 100) : 0;
-                                    document.getElementById('guideline-suggested').textContent = '$ ' + suggested.toLocaleString('es-AR') + ' (' + off + '% OFF)';
+                                if (suggestedValue > 0) {
+                                    // User feedback: suggestedValue is the DISCOUNT AMOUNT, not the final price.
+                                    // So Target Price = Original - DiscountAmount
+                                    const targetPrice = originalPrice - suggestedValue;
+                                    const offPercent = (suggestedValue / originalPrice) * 100;
+                                    
+                                    document.getElementById('guideline-suggested').innerHTML = 
+                                        `Target: <strong>$${ targetPrice.toLocaleString('es-AR')
+            }</strong > ` +
+                                        `< span style = "color: #00a650;" > (${ Math.round(offPercent) } % OFF)</span > ` +
+                                        `< small style = "color: #999;" > (Desc: $${ suggestedValue.toLocaleString('es-AR') })</small > `;
                                 } else {
                                      document.getElementById('guideline-suggested').textContent = '-';
                                 }
@@ -984,8 +991,9 @@ app.get('/listings', async (req, res) => {
 
                                 const price = parseFloat(priceInput.value);
                                 if (!isNaN(price)) {
+                                    // Percent = (Original - Price) / Original
                                     const percent = ((original - price) / original) * 100;
-                                    percentInput.value = percent.toFixed(1); // 1 decimal
+                                    percentInput.value = percent.toFixed(1); 
                                 } else {
                                     percentInput.value = '';
                                 }
@@ -1079,14 +1087,14 @@ app.get('/listings', async (req, res) => {
                     </div >
                     `;
 
-                res.send(renderPage('My Listings', content, 'listings'));
-            });
+        res.send(renderPage('My Listings', content, 'listings'));
+    });
         });
 
     } catch (error) {
-        console.error('Listings Error:', error.message);
-        res.send(renderPage('Error', `< p > Error fetching listings: ${error.message}</p > `, 'listings'));
-    }
+    console.error('Listings Error:', error.message);
+    res.send(renderPage('Error', `< p > Error fetching listings: ${error.message}</p > `, 'listings'));
+}
 });
 
 
