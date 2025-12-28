@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.74 - Fix Suggested Calc - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.75 - Syntax Fix - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
