@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.70 - Fixed Scroll Lock & Join Logic - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.71 - Promo Sync & Guidelines - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -589,11 +589,29 @@ app.get('/listings', async (req, res) => {
                                 </div>
                                 <div id="promo-config-section" style="display: none; border-top: 1px solid #eee; padding-top: 15px;">
                                     <h3 style="font-size: 1rem; margin-bottom: 10px;">Configurar Oferta</h3>
-                                    <div class="input-group">
-                                        <label class="input-label">Nuevo Precio</label>
-                                        <div class="modal-input-wrapper">
-                                            <input type="number" id="new-promo-price" class="modal-input" placeholder="0.00">
+                                    <div style="display: flex; gap: 15px;">
+                                        <div class="input-group" style="flex: 1;">
+                                            <label class="input-label">Nuevo Precio</label>
+                                            <div class="modal-input-wrapper">
+                                                <input type="number" id="new-promo-price" class="modal-input" placeholder="0.00" oninput="syncPriceToPercentage()">
+                                            </div>
                                         </div>
+                                        <div class="input-group" style="flex: 1;">
+                                            <label class="input-label">% Descuento</label>
+                                            <div class="modal-input-wrapper" style="position: relative;">
+                                                <input type="number" id="new-promo-percent" class="modal-input" placeholder="0" style="padding-left: 15px;" oninput="syncPercentageToPrice()">
+                                                <span style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #999;">%</span>
+                                            </div>
+                                            <!-- Hide the default $ sign for percent -->
+                                            <style>
+                                                #new-promo-percent + span { display: none; } /* Hack if wrapper adds $ */
+                                                #new-promo-percent ~ span { display: block !important; }
+                                            </style>
+                                        </div>
+                                    </div>
+                                    <div id="promo-guidelines" style="margin-bottom: 20px; font-size: 0.85rem; color: #666; background: #f8f9fa; padding: 10px; border-radius: 6px; display: none;">
+                                        <div>Original: <strong id="guideline-original">$-</strong></div>
+                                        <div>Sugerido: <strong id="guideline-suggested" style="color: #00a650;">$-</strong></div>
                                     </div>
                                 </div>
                                 <div class="modal-footer">
@@ -912,8 +930,8 @@ app.get('/listings', async (req, res) => {
                                     radio.type = 'radio';
                                     radio.name = 'selectedPromo';
                                     radio.value = p.id;
-                                    // Closure handles escaping safety automatically
-                                    radio.onchange = function() { selectPromoCandidate(p.id, p.type); };
+                                    // Pass full object to handler
+                                    radio.onchange = function() { selectPromoCandidate(p); };
 
                                     row.appendChild(info);
                                     row.appendChild(radio);
@@ -921,10 +939,78 @@ app.get('/listings', async (req, res) => {
                                 });
                             }
 
-                            function selectPromoCandidate(id, type) {
-                                console.log('Selected', id, type);
+                            function selectPromoCandidate(promo) {
+                                console.log('Selected', promo);
+                                const modal = document.getElementById('add-promo-modal');
+                                modal.dataset.selectedPromoId = promo.id;
+                                modal.dataset.selectedPromoType = promo.type;
+                                
+                                // Store Original Price for calculations
+                                // Try to find it in promo properties (depending on API response structure)
+                                // Standard items usually have original_price or we use the item's current price.
+                                let originalPrice = parseFloat(modal.dataset.originalPrice) || 0;
+                                if (promo.original_price) originalPrice = promo.original_price;
+
+                                modal.dataset.calcOriginalPrice = originalPrice;
+
+                                // Show Guidelines
+                                const guidelines = document.getElementById('promo-guidelines');
+                                guidelines.style.display = 'block';
+                                document.getElementById('guideline-original').textContent = '$ ' + originalPrice.toLocaleString('es-AR');
+                                
+                                // Suggested?
+                                let suggested = 0;
+                                if (promo.min_discounted_price) suggested = promo.min_discounted_price;
+                                // Add more logic here if API provides explicit suggested price
+                                
+                                if (suggested > 0) {
+                                    const off = originalPrice > 0 ? Math.round(((originalPrice - suggested) / originalPrice) * 100) : 0;
+                                    document.getElementById('guideline-suggested').textContent = '$ ' + suggested.toLocaleString('es-AR') + ' (' + off + '% OFF)';
+                                } else {
+                                     document.getElementById('guideline-suggested').textContent = '-';
+                                }
+
                                 document.getElementById('promo-config-section').style.display = 'block';
                                 document.getElementById('btn-join-promo').disabled = false;
+                                
+                                // Reset inputs
+                                document.getElementById('new-promo-price').value = '';
+                                document.getElementById('new-promo-percent').value = '';
+                                document.getElementById('new-promo-price').focus();
+                            }
+
+                            function syncPriceToPercentage() {
+                                const priceInput = document.getElementById('new-promo-price');
+                                const percentInput = document.getElementById('new-promo-percent');
+                                const modal = document.getElementById('add-promo-modal');
+                                const original = parseFloat(modal.dataset.calcOriginalPrice) || 0;
+
+                                if (!original) return;
+
+                                const price = parseFloat(priceInput.value);
+                                if (!isNaN(price)) {
+                                    const percent = ((original - price) / original) * 100;
+                                    percentInput.value = percent.toFixed(1); // 1 decimal
+                                } else {
+                                    percentInput.value = '';
+                                }
+                            }
+
+                            function syncPercentageToPrice() {
+                                const priceInput = document.getElementById('new-promo-price');
+                                const percentInput = document.getElementById('new-promo-percent');
+                                const modal = document.getElementById('add-promo-modal');
+                                const original = parseFloat(modal.dataset.calcOriginalPrice) || 0;
+
+                                if (!original) return;
+
+                                const percent = parseFloat(percentInput.value);
+                                if (!isNaN(percent)) {
+                                    const price = original * (1 - (percent / 100));
+                                    priceInput.value = Math.floor(price); // Round down to integer for safety
+                                } else {
+                                    priceInput.value = '';
+                                }
                             }
 
                             function closeAddPromoModal() {
