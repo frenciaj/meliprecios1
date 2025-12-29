@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v13.1 - Create Promo (Clean) - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v13.2 - Flexible % Campaigns - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2286,9 +2286,9 @@ app.get('/create-promotion-ui', (req, res) => {
                 </div>
 
                 <div style="margin-bottom: 20px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Porcentaje de Descuento</label>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Porcentaje de Descuento Sugerido</label>
                     <input type="number" id="promoPercent" class="search-input" placeholder="Ej: 10" style="width: 100%; box-sizing: border-box;" min="5" max="80" step="1">
-                    <small style="color: #999;">Descuento fijo para todos los items (Mínimo 5%)</small>
+                    <small style="color: #999;">Descuento de referencia. Podrás ajustar el % por producto al agregarlo.</small>
                 </div>
 
                 <div style="margin-bottom: 30px;">
@@ -2370,9 +2370,8 @@ app.post('/create-promotion', async (req, res) => {
 
     const payload = {
         promotion_type: 'SELLER_CAMPAIGN',
-        sub_type: 'FIXED_PERCENTAGE',
+        sub_type: 'FLEXIBLE_PERCENTAGE',
         name: name,
-        fixed_percentage: percent,
         start_date: startDate.toISOString().split('.')[0],
         finish_date: endDate.toISOString().split('.')[0]
     };
