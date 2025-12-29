@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.87 - Dynamic Fees - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.88 - Syntax Emergency Fix - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -1246,7 +1246,9 @@ app.get('/listings', async (req, res) => {
                                 url.searchParams.set('sort', sortValue);
                                 url.searchParams.set('page', '1');
                                 window.location.href = url.toString();
-                                                    function updateNetIncome(itemId, newPrice) {
+                            }
+
+                            function updateNetIncome(itemId, newPrice) {
                                 const cell = document.getElementById('net-income-' + itemId);
                                 if (!cell) return;
 
