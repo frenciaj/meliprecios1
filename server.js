@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.77 - Local DB Sync - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.78 - Price Update Fix - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -1152,7 +1152,7 @@ app.post('/update-price', async (req, res) => {
 
     try {
         // 1. Get User ID
-        const userRes = await axios.get('https://api.mercadolibre.com/users/me', { headers: { Authorization: `Bearer ${accessToken} ` } });
+        const userRes = await axios.get('https://api.mercadolibre.com/users/me', { headers: { Authorization: `Bearer ${accessToken}` } });
         const userId = userRes.data.id;
 
         console.log(`[Price Update]Item: ${itemId}, New Price: ${newPrice}, User: ${userId} `);
@@ -1165,15 +1165,16 @@ app.post('/update-price', async (req, res) => {
         console.log(`[Price Update] API Success for ${itemId}`);
 
         // 3. Update Local DB (wrapped in Promise to ensure completion)
+        // CRITICAL: We must clear sale_price_amount so render uses the new base price!
         await new Promise((resolve, reject) => {
-            db.run(`UPDATE items_v14 SET price = ?, last_updated = ? WHERE id = ? AND user_id = ?`,
+            db.run(`UPDATE items_v14 SET price = ?, sale_price_amount = NULL, sale_price_regular_amount = NULL, last_updated = ? WHERE id = ? AND user_id = ?`,
                 [parseFloat(newPrice), new Date().toISOString(), itemId, userId],
                 (err) => {
                     if (err) {
                         console.error('Local DB Update Error:', err);
                         reject(err);
                     } else {
-                        console.log(`[Price Update] DB Updated for ${itemId}`);
+                        console.log(`[Price Update] DB Updated for ${itemId} (Cleared stale sale prices)`);
                         resolve();
                     }
                 }
