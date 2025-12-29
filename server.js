@@ -1502,8 +1502,8 @@ app.post('/create-promotion', async (req, res) => {
     }
 });
 
-//     try {
-//         const res = await axios.get(`https://api.mercadolibre.com/seller-promotions/promotions/${activeCampaignId}/items`, {
+
+
 //             headers: { Authorization: `Bearer ${accessToken}` },
 //             params: { promotion_type: activeCampaignType, status, app_version: 'v2' }
 //         });
