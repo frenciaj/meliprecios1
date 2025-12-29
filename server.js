@@ -150,7 +150,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     
     <nav class="tabs-nav">
         <a href="/listings" class="tab-link ${activeTab === 'listings' ? 'active' : ''}">Listados</a>
-        <a href="/promotions" class="tab-link ${activeTab === 'promotions' ? 'active' : ''}">Promociones</a>
+        <a href="/create-promotion-ui" class="tab-link ${activeTab === 'create_promotion' ? 'active' : ''}">Crear Promoción</a>
     </nav>
 
     <div class="container">
@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.88 - Syntax Emergency Fix - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v13.0 - Create Promo - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
