@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.79 - Instant UI Update - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.80 - Promo Instant UI - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -843,7 +843,17 @@ app.get('/listings', async (req, res) => {
                                     });
                                     
                                     if (res.ok) {
-                                        location.reload();
+                                        const data = await res.json();
+                                        if (data.success) {
+                                            const displaySpan = container.querySelector('.promo-value-text');
+                                            const formatted = newPrice.toLocaleString('es-AR');
+                                            displaySpan.textContent = formatted;
+                                            input.value = newPrice;
+                                            cancelPromoEdit(itemId);
+                                            btn.innerHTML = '✓';
+                                        } else {
+                                            location.reload();
+                                        }
                                     } else {
                                         let errorMsg = 'Unknown Error';
                                         try {
