@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.86 - Sync Fixed (DOM API) - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.87 - Dynamic Fees - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -517,14 +517,14 @@ app.get('/listings', async (req, res) => {
                                     </div>
                                 `}
                             </td>
-                            <td class="net-income-cell" style="font-weight: 600; color: ${netIncomeColor};">
-                                ${netIncomeFormatted}
+                            <td class="net-income-cell" id="net-income-${item.id}" data-ship-fee="${shipFee}" data-sale-fee="${saleFee}" data-current-price="${currentPrice}">
+                                <span class="net-income-value">${netIncomeFormatted}</span>
                                 <div class="fee-tooltip">
                                      <div class="tooltip-title">Detalle de Costos</div>
-                                     <div class="tooltip-row"><span class="tooltip-label">Venta:</span><span class="tooltip-value">$ ${currentPrice.toLocaleString('es-AR')}</span></div>
-                                     <div class="tooltip-row"><span class="tooltip-label">Cargos:</span><span class="tooltip-value minus">-$ ${saleFee.toLocaleString('es-AR')}</span></div>
-                                     <div class="tooltip-row"><span class="tooltip-label">Envío:</span><span class="tooltip-value minus">-$ ${shipFee.toLocaleString('es-AR')}</span></div>
-                                     <div class="tooltip-row total"><span class="tooltip-label">Recibís:</span><span class="tooltip-value" style="color: ${netIncomeColor};">${netIncomeFormatted}</span></div>
+                                     <div class="tooltip-row"><span class="tooltip-label">Venta:</span><span class="tooltip-value param-price">$ ${currentPrice.toLocaleString('es-AR')}</span></div>
+                                     <div class="tooltip-row"><span class="tooltip-label">Cargos:</span><span class="tooltip-value minus param-fee">-$ ${saleFee.toLocaleString('es-AR')}</span></div>
+                                     <div class="tooltip-row"><span class="tooltip-label">Envío:</span><span class="tooltip-value minus param-ship">-$ ${shipFee.toLocaleString('es-AR')}</span></div>
+                                     <div class="tooltip-row total"><span class="tooltip-label">Recibís:</span><span class="tooltip-value param-net" style="color: ${netIncomeColor};">${netIncomeFormatted}</span></div>
                                      ${item.free_shipping === 0 ? '<div class="tooltip-row" style="margin-top:5px; font-size:0.7rem; color:#666;">* Envío a cargo del comprador</div>' : ''}
                                 </div>
                             </td>
@@ -742,6 +742,9 @@ app.get('/listings', async (req, res) => {
 
                                         cancelEdit(itemId);
                                         btn.innerHTML = '✓';
+                                        
+                                        // Dynamic Net Income Update
+                                        updateNetIncome(itemId, parseFloat(newPrice));
                                     } else {
                                         alert('Error updating price: ' + data.error);
                                         btn.innerHTML = '✓';
@@ -851,6 +854,9 @@ app.get('/listings', async (req, res) => {
                                             input.value = newPrice;
                                             cancelPromoEdit(itemId);
                                             btn.innerHTML = '✓';
+                                            
+                                            // Dynamic Net Income Update
+                                            updateNetIncome(itemId, newPrice);
                                         } else {
                                             location.reload();
                                         }
@@ -1218,6 +1224,9 @@ app.get('/listings', async (req, res) => {
 
                                         alert('¡Éxito! Oferta aplicada correctamente.');
                                         closeAddPromoModal();
+                                        
+                                        // Dynamic Net Income Update
+                                        updateNetIncome(itemId, dealPrice);
                                     } else {
                                         const errMsg = data.details?.message || data.error || 'Error desconocido';
                                         alert('Error al unirse: ' + errMsg);
@@ -1237,8 +1246,51 @@ app.get('/listings', async (req, res) => {
                                 url.searchParams.set('sort', sortValue);
                                 url.searchParams.set('page', '1');
                                 window.location.href = url.toString();
+                                                    function updateNetIncome(itemId, newPrice) {
+                                const cell = document.getElementById('net-income-' + itemId);
+                                if (!cell) return;
+
+                                const oldPrice = parseFloat(cell.dataset.currentPrice) || newPrice; // Fallback
+                                const oldFee = parseFloat(cell.dataset.saleFee) || 0;
+                                const shipFee = parseFloat(cell.dataset.shipFee) || 0;
+
+                                // Estimate Fee Rate
+                                let feeRate = 0;
+                                if (oldPrice > 0) feeRate = oldFee / oldPrice;
+
+                                // Calculate New Values
+                                const newFee = newPrice * feeRate;
+                                const newNet = newPrice - newFee - shipFee;
+
+                                // Update Text
+                                const netSpan = cell.querySelector('.net-income-value');
+                                const formattedNet = '$ ' + newNet.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                                if (netSpan) {
+                                    netSpan.textContent = formattedNet;
+                                    netSpan.style.color = newNet < 0 ? '#d32f2f' : '#00a650';
+                                }
+
+                                // Update Tooltip Params
+                                const tPrice = cell.querySelector('.param-price');
+                                if (tPrice) tPrice.textContent = '$ ' + newPrice.toLocaleString('es-AR');
+                                
+                                const tFee = cell.querySelector('.param-fee');
+                                if (tFee) tFee.textContent = '-$ ' + newFee.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+                                const tNet = cell.querySelector('.param-net');
+                                if (tNet) {
+                                    tNet.textContent = formattedNet;
+                                    tNet.style.color = newNet < 0 ? '#d32f2f' : '#00a650';
+                                }
+
+                                // Update Dataset for sequential edits
+                                cell.dataset.currentPrice = newPrice;
+                                cell.dataset.saleFee = newFee;
                             }
-                    </script>
+                            
+                            // Expose to window for inline calls if needed, though they are in same scope
+                            // window.updateNetIncome = updateNetIncome;
+                        </script>
                     </div >
                     `;
 
