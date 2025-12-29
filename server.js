@@ -1467,138 +1467,177 @@ app.get('/create-promotion-ui', (req, res) => {
 
     res.send(renderPage('Crear Promoción', content, 'create_promotion'));
 });
-                        params: { promotion_type: activeCampaignType, status, app_version: 'v2' }
-                    });
-                    rawApiData[status] = res.data;
-                    return res.data.results || res.data.items || [];
-                } catch (e) {
-                    console.error(`[Promotions] API Error for ${status}:`, e.response?.data || e.message);
-                    rawApiData[status + '_error'] = e.response?.data || e.message;
-                    return [];
-                }
-            };
+app.post('/create-promotion', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+    if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-            // ===== NEW APPROACH: Load from DB, then enrich with promo data =====
+    const { name, percent, days } = req.body;
 
-            // Load paginated items from database (with search filter)
-            const dbItems = await new Promise((resolve, reject) => {
-                db.all(
-                    `SELECT * FROM items_v14 WHERE ${whereClause} ORDER BY ${orderByClause} LIMIT ? OFFSET ?`,
-                    [...queryParams, perPage, offset],
-                    (err, rows) => {
-                        if (err) {
-                            console.error('[Promotions] DB Error:', err);
-                            reject(err);
-                        } else {
-                            resolve(rows || []);
-                        }
-                    }
-                );
+    // Calculate dates
+    const startDate = new Date();
+    const endDate = new Date();
+    endDate.setDate(startDate.getDate() + days);
+
+    const payload = {
+        promotion_type: 'SELLER_CAMPAIGN',
+        sub_type: 'FIXED_PERCENTAGE',
+        name: name,
+        fixed_percentage: percent,
+        start_date: startDate.toISOString().split('.')[0], // Format: YYYY-MM-DDTHH:mm:ss
+        finish_date: endDate.toISOString().split('.')[0]
+    };
+
+    console.log('[Create Promo] Payload:', payload);
+
+    try {
+        const createRes = await axios.post('https://api.mercadolibre.com/seller-promotions/promotions?app_version=v2', payload, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        console.log('[Create Promo] Success:', createRes.data);
+        res.json({ success: true, data: createRes.data });
+    } catch (error) {
+        console.error('[Create Promo] Error:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: error.response?.data?.message || error.message });
+    }
+});
+// Inside app.get('/promotions', ...)
+// const fetchPromotionsByStatus = async (status) => {
+//     try {
+//         const res = await axios.get(`https://api.mercadolibre.com/seller-promotions/promotions/${activeCampaignId}/items`, {
+//             headers: { Authorization: `Bearer ${accessToken}` },
+//             params: { promotion_type: activeCampaignType, status, app_version: 'v2' }
+//         });
+//         rawApiData[status] = res.data;
+//         return res.data.results || res.data.items || [];
+//     } catch (e) {
+//         console.error(`[Promotions] API Error for ${status}:`, e.response?.data || e.message);
+//         rawApiData[status + '_error'] = e.response?.data || e.message;
+//         return [];
+//     }
+// };
+
+// ===== NEW APPROACH: Load from DB, then enrich with promo data =====
+
+// Load paginated items from database (with search filter)
+const dbItems = await new Promise((resolve, reject) => {
+    db.all(
+        `SELECT * FROM items_v14 WHERE ${whereClause} ORDER BY ${orderByClause} LIMIT ? OFFSET ?`,
+        [...queryParams, perPage, offset],
+        (err, rows) => {
+            if (err) {
+                console.error('[Promotions] DB Error:', err);
+                reject(err);
+            } else {
+                resolve(rows || []);
+            }
+        }
+    );
+});
+
+console.log(`[Promotions] Loaded ${dbItems.length} items from database`);
+
+// 2. Fetch promotion info from API (per item, batched)
+const promoInfoMap = {};
+
+if (activeCampaignId && dbItems.length > 0) {
+    console.log(`[Promotions] Fetching promo data for ${dbItems.length} items...`);
+
+    // Batch fetch promo info for all items (limit to avoid timeout)
+    const itemsToFetch = dbItems.slice(0, 100); // Process first 100 items
+
+    for (const item of itemsToFetch) {
+        try {
+            const res = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${item.id}?app_version=v2`, {
+                headers: { Authorization: `Bearer ${accessToken}` }
             });
 
-            console.log(`[Promotions] Loaded ${dbItems.length} items from database`);
+            const promos = res.data || [];
 
-            // 2. Fetch promotion info from API (per item, batched)
-            const promoInfoMap = {};
+            // Find matching promotion for selected campaign
+            const matchingPromo = promos.find(p => p.id === activeCampaignId);
 
-            if (activeCampaignId && dbItems.length > 0) {
-                console.log(`[Promotions] Fetching promo data for ${dbItems.length} items...`);
-
-                // Batch fetch promo info for all items (limit to avoid timeout)
-                const itemsToFetch = dbItems.slice(0, 100); // Process first 100 items
-
-                for (const item of itemsToFetch) {
-                    try {
-                        const res = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${item.id}?app_version=v2`, {
-                            headers: { Authorization: `Bearer ${accessToken}` }
-                        });
-
-                        const promos = res.data || [];
-
-                        // Find matching promotion for selected campaign
-                        const matchingPromo = promos.find(p => p.id === activeCampaignId);
-
-                        if (matchingPromo) {
-                            promoInfoMap[item.id] = {
-                                status: matchingPromo.status,
-                                price: matchingPromo.price,
-                                min: matchingPromo.min_discounted_price,
-                                max: matchingPromo.max_discounted_price,
-                                suggested: matchingPromo.suggested_discounted_price,
-                                original: matchingPromo.original_price
-                            };
-                            rawApiData[`item_${item.id}`] = promos; // Store for debug
-                        }
-                    } catch (e) {
-                        // Silently skip items that error (likely not eligible)
-                        if (e.response?.status !== 404) {
-                            console.error(`[Promotions] Error fetching promo for ${item.id}:`, e.message);
-                        }
-                    }
-                }
-
-                console.log(`[Promotions] Found ${Object.keys(promoInfoMap).length} items with promo data for campaign ${activeCampaignId}`);
+            if (matchingPromo) {
+                promoInfoMap[item.id] = {
+                    status: matchingPromo.status,
+                    price: matchingPromo.price,
+                    min: matchingPromo.min_discounted_price,
+                    max: matchingPromo.max_discounted_price,
+                    suggested: matchingPromo.suggested_discounted_price,
+                    original: matchingPromo.original_price
+                };
+                rawApiData[`item_${item.id}`] = promos; // Store for debug
             }
+        } catch (e) {
+            // Silently skip items that error (likely not eligible)
+            if (e.response?.status !== 404) {
+                console.error(`[Promotions] Error fetching promo for ${item.id}:`, e.message);
+            }
+        }
+    }
 
-            // 3. Merge DB items with promo info and filter
-            candidates = dbItems
-                .map(item => {
-                    // Parse attributes if stored as JSON string
-                    let attributes = [];
-                    try {
-                        attributes = item.attributes ? JSON.parse(item.attributes) : [];
-                    } catch (e) {
-                        // If not JSON, create brand attribute from brand column
-                        if (item.brand) {
-                            attributes = [{ id: 'BRAND', value_name: item.brand }];
-                        }
-                    }
+    console.log(`[Promotions] Found ${Object.keys(promoInfoMap).length} items with promo data for campaign ${activeCampaignId}`);
+}
 
-                    return {
-                        id: item.id,
-                        title: item.title,
-                        thumbnail: item.thumbnail,
-                        price: item.price,
-                        attributes: attributes,
-                        promo_info: promoInfoMap[item.id] || {}
-                    };
-                })
-                .filter(item => {
-                    // If campaign selected, only show items with promo info
-                    if (activeCampaignId) {
-                        return promoInfoMap[item.id] !== undefined;
-                    }
-                    // Otherwise show all items
-                    return true;
-                });
-
-            console.log(`[Promotions] Showing ${candidates.length} candidates after filtering`);
+// 3. Merge DB items with promo info and filter
+candidates = dbItems
+    .map(item => {
+        // Parse attributes if stored as JSON string
+        let attributes = [];
+        try {
+            attributes = item.attributes ? JSON.parse(item.attributes) : [];
+        } catch (e) {
+            // If not JSON, create brand attribute from brand column
+            if (item.brand) {
+                attributes = [{ id: 'BRAND', value_name: item.brand }];
+            }
         }
 
-        const campaignsHtml = campaigns.map(c => `
+        return {
+            id: item.id,
+            title: item.title,
+            thumbnail: item.thumbnail,
+            price: item.price,
+            attributes: attributes,
+            promo_info: promoInfoMap[item.id] || {}
+        };
+    })
+    .filter(item => {
+        // If campaign selected, only show items with promo info
+        if (activeCampaignId) {
+            return promoInfoMap[item.id] !== undefined;
+        }
+        // Otherwise show all items
+        return true;
+    });
+
+console.log(`[Promotions] Showing ${candidates.length} candidates after filtering`);
+        }
+
+const campaignsHtml = campaigns.map(c => `
             <div class="campaign-chip ${c.id === activeCampaignId ? 'active' : ''}" 
                  onclick="window.location.href='/promotions?campaign_id=${c.id}&type=${c.type}'">
                 ${c.name || c.id} (${c.type})
             </div>
         `).join('');
 
-        const candidatesHtml = candidates.map(item => {
-            const brand = item.attributes?.find(a => a.id === 'BRAND')?.value_name || 'N/A';
-            const info = item.promo_info || {};
-            const isStarted = info.status === 'started';
+const candidatesHtml = candidates.map(item => {
+    const brand = item.attributes?.find(a => a.id === 'BRAND')?.value_name || 'N/A';
+    const info = item.promo_info || {};
+    const isStarted = info.status === 'started';
 
-            // Prepare data for the modal
-            const modalData = JSON.stringify({
-                id: item.id,
-                title: item.title,
-                original: item.price,
-                min: info.min,
-                max: info.max,
-                suggested: info.suggested,
-                current: info.price || info.suggested || (item.price * 0.9)
-            }).replace(/"/g, '&quot;');
+    // Prepare data for the modal
+    const modalData = JSON.stringify({
+        id: item.id,
+        title: item.title,
+        original: item.price,
+        min: info.min,
+        max: info.max,
+        suggested: info.suggested,
+        current: info.price || info.suggested || (item.price * 0.9)
+    }).replace(/"/g, '&quot;');
 
-            return `
+    return `
                 <div class="promo-card" 
                      data-name="${item.title.toLowerCase()}" 
                      data-id="${item.id}" 
@@ -1628,9 +1667,9 @@ app.get('/create-promotion-ui', (req, res) => {
                     </div>
                 </div>
             `;
-        }).join('');
+}).join('');
 
-        const content = `
+const content = `
             <div class="card">
                 <h2 style="margin-bottom: 20px;">Central de Promociones</h2>
                 
@@ -1707,8 +1746,8 @@ app.get('/create-promotion-ui', (req, res) => {
                         <div style="font-size: 3rem; margin-bottom: 10px;">${activeCampaignId ? '🔍' : '🏷️'}</div>
                         <p style="color: #666;">
                             ${activeCampaignId
-                ? 'No se encontraron productos elegibles para esta campaña. Puede que ya estén participando o no califiquen.'
-                : 'Selecciona una campaña para ver los productos que pueden participar.'}
+        ? 'No se encontraron productos elegibles para esta campaña. Puede que ya estén participando o no califiquen.'
+        : 'Selecciona una campaña para ver los productos que pueden participar.'}
                         </p>
                     </div>
                 `}
@@ -1975,15 +2014,15 @@ ${JSON.stringify(rawApiData, null, 2)}
             </script>
         `;
 
-        res.send(renderPage('Promociones', content, 'promotions'));
+res.send(renderPage('Promociones', content, 'promotions'));
 
     } catch (error) {
-        console.error('Promotions Error:', error.message);
-        res.status(500).send(renderDebugError('Error en Promociones', 'No se pudieron cargar las promociones.', {
-            message: error.message,
-            api_response: error.response?.data
-        }));
-    }
+    console.error('Promotions Error:', error.message);
+    res.status(500).send(renderDebugError('Error en Promociones', 'No se pudieron cargar las promociones.', {
+        message: error.message,
+        api_response: error.response?.data
+    }));
+}
 });
 
 app.post('/apply-promotion', async (req, res) => {
