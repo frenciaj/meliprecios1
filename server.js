@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v13.0.1 - Create Promo Route Fixed - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v13.0.3 - Zombie Code Purged - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -1501,8 +1501,7 @@ app.post('/create-promotion', async (req, res) => {
         res.status(500).json({ success: false, error: error.response?.data?.message || error.message });
     }
 });
-// Inside app.get('/promotions', ...)
-// const fetchPromotionsByStatus = async (status) => {
+
 //     try {
 //         const res = await axios.get(`https://api.mercadolibre.com/seller-promotions/promotions/${activeCampaignId}/items`, {
 //             headers: { Authorization: `Bearer ${accessToken}` },
