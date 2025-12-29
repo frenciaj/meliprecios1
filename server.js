@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.80 - Promo Instant UI - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.81 - UI Polish - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -512,7 +512,7 @@ app.get('/listings', async (req, res) => {
                                     </div>
                                 ` : `
                                     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;">
-                                        <span style="color: #ccc;">---</span>
+
                                         <button class="add-promo-btn" onclick="openAddPromoModal('${item.id}', ${item.price})" title="Agregar Promoción" style="border: none; background: #e6f7ee; color: #00a650; font-weight: bold; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px;">+</button>
                                     </div>
                                 `}
