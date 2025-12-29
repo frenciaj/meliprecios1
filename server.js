@@ -1382,72 +1382,91 @@ app.post('/update-quantity', async (req, res) => {
     }
 });
 
-app.get('/promotions', async (req, res) => {
+app.get('/create-promotion-ui', (req, res) => {
     const accessToken = req.cookies.access_token;
     if (!accessToken) return res.redirect('/');
 
-    try {
-        const userResponse = await axios.get('https://api.mercadolibre.com/users/me', {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        const userId = userResponse.data.id;
+    const content = `
+        <div class="card" style="max-width: 600px; margin: 40px auto;">
+            <h2 style="margin-bottom: 20px; color: #333;">Crear Nueva Promoción</h2>
+            <p style="color: #666; margin-bottom: 30px;">Crea una campaña de descuento para tus productos. Luego, podrás agregar productos a esta campaña desde la pestaña "Listados".</p>
+            
+            <div id="create-promo-form">
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Nombre de la Campaña</label>
+                    <input type="text" id="promoName" class="search-input" placeholder="Ej: Ofertas Enero" style="width: 100%; box-sizing: border-box;">
+                </div>
 
-        // 1. Fetch available promotions v2
-        const promotionsResponse = await axios.get(`https://api.mercadolibre.com/seller-promotions/users/${userId}?app_version=v2`, {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Porcentaje de Descuento</label>
+                    <input type="number" id="promoPercent" class="search-input" placeholder="Ej: 10" style="width: 100%; box-sizing: border-box;" min="5" max="80" step="1">
+                    <small style="color: #999;">Descuento fijo para todos los items (Mínimo 5%)</small>
+                </div>
 
-        const campaigns = promotionsResponse.data.results || [];
+                <div style="margin-bottom: 30px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Duración (Días)</label>
+                    <input type="number" id="promoDays" class="search-input" value="7" style="width: 100%; box-sizing: border-box;" min="1" max="365">
+                    <small style="color: #999;">La campaña comenzará hoy.</small>
+                </div>
 
-        // 2. Fetch candidates for the first active campaign (as a starting point)
-        let candidates = [];
-        let activeCampaignId = req.query.campaign_id || (campaigns.length > 0 ? campaigns[0].id : null);
-        let activeCampaignType = req.query.type || (campaigns.length > 0 ? campaigns[0].type : null);
+                <button onclick="submitNewPromo()" class="btn-primary" style="width: 100%;">Crear Campaña</button>
+            </div>
+            
+            <div id="promo-success" style="display: none; text-align: center; color: #00a650;">
+                <h3 style="margin-bottom: 10px;">¡Campaña Creada!</h3>
+                <p>Ahora ve a "Listados" y usa el botón (+) para agregar productos.</p>
+                <a href="/listings" class="btn-primary" style="display: inline-block; margin-top: 20px;">Ir a Listados</a>
+            </div>
+        </div>
 
-        let rawApiData = {};
+        <script>
+            async function submitNewPromo() {
+                const name = document.getElementById('promoName').value;
+                const percent = parseFloat(document.getElementById('promoPercent').value);
+                const days = parseInt(document.getElementById('promoDays').value);
 
-        // Pagination and search setup (moved outside if block for scope)
-        const page = parseInt(req.query.page) || 1;
-        const limit = 50;
-        const offset = (page - 1) * limit;
-        const searchFilter = req.query.search || '';
-        const sortBy = req.query.sort || 'name';
+                if (!name || !percent || !days) {
+                    alert('Por favor completa todos los campos.');
+                    return;
+                }
 
-        // Build WHERE clause for search
-        let whereClause = 'user_id = ?';
-        let queryParams = [userId];
+                if (percent < 5 || percent > 80) {
+                    alert('El descuento debe ser entre 5% y 80%.');
+                    return;
+                }
 
-        if (searchQuery) {
-            whereClause += ' AND (title LIKE ? OR id LIKE ? OR brand LIKE ?)';
-            const searchPattern = `%${searchQuery}%`;
-            queryParams.push(searchPattern, searchPattern, searchPattern);
-        }
+                const btn = document.querySelector('button');
+                btn.disabled = true;
+                btn.textContent = 'Creando...';
 
-        // Build ORDER BY clause
-        let orderByClause = 'last_updated DESC'; // Default: most recent
-        if (sortBy === 'sales') orderByClause = 'sold_quantity DESC NULLS LAST';
-        if (sortBy === 'price_asc') orderByClause = 'price ASC';
-        if (sortBy === 'price_desc') orderByClause = 'price DESC';
-
-        // Get total count (with search filter) - moved outside if block
-        const totalItems = await new Promise((resolve, reject) => {
-            db.get(
-                `SELECT COUNT(*) as count FROM items_v14 WHERE ${whereClause}`,
-                queryParams,
-                (err, row) => err ? reject(err) : resolve(row.count)
-            );
-        });
-
-        const totalPages = Math.ceil(totalItems / perPage);
-        console.log(`[Promotions] Total: ${totalItems} items, Page ${page}/${totalPages}, Search: "${searchQuery}"`);
-
-        if (activeCampaignId) {
-            console.log(`[Promotions] Fetching items for ID: ${activeCampaignId}, Type: ${activeCampaignType}`);
-
-            const fetchByStatus = async (status) => {
                 try {
-                    const res = await axios.get(`https://api.mercadolibre.com/seller-promotions/promotions/${activeCampaignId}/items`, {
-                        headers: { Authorization: `Bearer ${accessToken}` },
+                    const res = await fetch('/create-promotion', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, percent, days })
+                    });
+                    
+                    const data = await res.json();
+                    
+                    if (data.success) {
+                        document.getElementById('create-promo-form').style.display = 'none';
+                        document.getElementById('promo-success').style.display = 'block';
+                    } else {
+                        alert('Error al crear: ' + (data.error || 'Desconocido'));
+                        btn.disabled = false;
+                        btn.textContent = 'Crear Campaña';
+                    }
+                } catch (e) {
+                    alert('Error de conexión: ' + e.message);
+                    btn.disabled = false;
+                    btn.textContent = 'Crear Campaña';
+                }
+            }
+        </script>
+    `;
+
+    res.send(renderPage('Crear Promoción', content, 'create_promotion'));
+});
                         params: { promotion_type: activeCampaignType, status, app_version: 'v2' }
                     });
                     rawApiData[status] = res.data;
