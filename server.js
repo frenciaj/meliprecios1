@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.83 - Syntax Rescue - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.85 - Sync & Logic Fix - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -1016,6 +1016,7 @@ app.get('/listings', async (req, res) => {
                                 if (promo.original_price) originalPrice = promo.original_price;
 
                                 modal.dataset.calcOriginalPrice = originalPrice;
+                                modal.dataset.originalPrice = originalPrice; // Ensure robust downstream use
 
                                 // Show Guidelines
                                 const guidelines = document.getElementById('promo-guidelines');
@@ -1138,7 +1139,7 @@ app.get('/listings', async (req, res) => {
                                             if (row) {
                                                 const promoCell = row.children[3]; // 4th column
                                                 const formattedPrice = dealPrice.toLocaleString('es-AR');
-                                                const basePrice = modal.dataset.originalPrice; 
+                                                const basePrice = modal.dataset.originalPrice || 0; 
 
                                                 // Construct HTML with plain strings
                                                 let newHtml = '<div class="promo-edit-container" data-item-id="' + itemId + '" data-promo-id="' + promoId + '" data-promo-type="' + promoType + '">';
