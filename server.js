@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v12.78 - Price Update Fix - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v12.79 - Instant UI Update - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -703,16 +703,17 @@ app.get('/listings', async (req, res) => {
                             }
 
                             async function savePrice(itemId) {
-                                const input = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"] .price-input');
+                                const container = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"]');
+                                const input = container.querySelector('.price-input');
                                 const newPrice = input.value;
-                                const btn = document.querySelector('.price-edit-container[data-item-id="' + itemId + '"] .save-price-btn');
+                                const btn = container.querySelector('.save-price-btn');
                                 
                                 btn.disabled = true;
                                 btn.innerHTML = '...';
 
                                 try {
                                     const controller = new AbortController();
-                                    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+                                    const timeoutId = setTimeout(() => controller.abort(), 15000); 
 
                                     const res = await fetch('/update-price', {
                                         method: 'POST',
@@ -729,20 +730,31 @@ app.get('/listings', async (req, res) => {
 
                                     const data = await res.json();
                                     if (data.success) {
-                                        location.reload();
+                                        // Optmistic Update: Update DOM directly to avoid reload lag
+                                        const displaySpan = container.querySelector('.price-value');
+                                        const formatted = parseFloat(newPrice).toLocaleString('es-AR');
+                                        displaySpan.textContent = '$ ' + formatted;
+                                        
+                                        // Update Input Value (for next edit)
+                                        input.value = newPrice;
+                                        // Also update attribute for consistency
+                                        input.setAttribute('value', newPrice);
+
+                                        cancelEdit(itemId);
+                                        btn.innerHTML = '✓';
                                     } else {
                                         alert('Error updating price: ' + data.error);
-                                        btn.disabled = false;
                                         btn.innerHTML = '✓';
                                     }
                                 } catch (e) {
                                     if (e.name === 'AbortError') {
-                                        alert('Error: Request timed out. Please try again.');
+                                        alert('Error: Request timed out.');
                                     } else {
                                         alert('Error: ' + e.message);
                                     }
-                                    btn.disabled = false;
                                     btn.innerHTML = '✓';
+                                } finally {
+                                    btn.disabled = false;
                                 }
                             }
 
