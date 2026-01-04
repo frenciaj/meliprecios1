@@ -158,7 +158,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v13.2 - Flexible % Campaigns - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v13.3 - Default Sort: Sales - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -354,7 +354,7 @@ app.get('/listings', async (req, res) => {
         const offset = (page - 1) * limit;
         const search = req.query.q ? `%${req.query.q}%` : '%';
         const statusFilter = req.query.status || 'all';
-        const sortBy = req.query.sort || 'name';
+        const sortBy = req.query.sort || 'sales';
 
         // Build SQL Query
         let sql = `SELECT * FROM items_v14 WHERE user_id = ? AND (title LIKE ? OR id LIKE ? OR brand LIKE ?)`;
@@ -375,7 +375,7 @@ app.get('/listings', async (req, res) => {
             const totalPages = Math.ceil(totalItems / limit);
 
             // Get Items with dynamic sorting
-            let orderByClause = 'title ASC'; // Default: alphabetical
+            let orderByClause = 'sold_quantity DESC'; // Default: Most Sold
             if (sortBy === 'sales') orderByClause = 'sold_quantity DESC';
             else if (sortBy === 'price_asc') orderByClause = 'price ASC';
             else if (sortBy === 'price_desc') orderByClause = 'price DESC';
