@@ -159,7 +159,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.0.4 - UI Debug Mode - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.0.5 - Fix 400 Bad Request - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2304,8 +2304,12 @@ app.get('/promotions-summary', async (req, res) => {
             allPromotions.map(async (promo) => {
                 let itemCount = 0;
                 try {
+                    // We must include promotion_type. If it's missing in the list, guess from context or try without it.
+                    // But usually the list endpoint returns it.
+                    const pType = promo.promotion_type || promo.type || 'SELLER_CAMPAIGN';
+
                     const itemsRes = await axios.get(
-                        `https://api.mercadolibre.com/seller-promotions/promotions/${promo.id}/items?status=started&app_version=v2`,
+                        `https://api.mercadolibre.com/seller-promotions/promotions/${promo.id}/items?promotion_type=${pType}&status=started&app_version=v2`,
                         { headers: { Authorization: `Bearer ${accessToken}` } }
                     );
 
