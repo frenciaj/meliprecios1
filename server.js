@@ -159,7 +159,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.0.3 - Debug Item Count - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.0.4 - UI Debug Mode - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2311,6 +2311,7 @@ app.get('/promotions-summary', async (req, res) => {
 
                     if (promo.id === 'C-MLA850709') { // Log details for one promo to debug
                         console.log(`[DEBUG Count] Response for ${promo.id}:`, JSON.stringify(itemsRes.data, null, 2));
+                        promo._debug_items_response = itemsRes.data;
                     }
 
                     // Try paging.total first, then fallback to results length
@@ -2363,6 +2364,7 @@ app.get('/promotions-summary', async (req, res) => {
                         <div>
                             <h3 style="margin: 0 0 5px 0; color: #333;">${promo.name || 'Sin nombre'}</h3>
                             <div style="font-size: 0.85rem; color: #999;">ID: ${promo.id}</div>
+                            ${promo.id === 'C-MLA850709' ? `<pre style="font-size: 0.6rem; color: red; background: #eee; padding: 5px; margin-top: 5px; overflow: auto; max-height: 100px;">DEBUG: ${JSON.stringify(promo._debug_items_response, null, 2)}</pre>` : ''}
                         </div>
                         <div style="background: ${statusColor}; color: white; padding: 5px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 500;">
                             ${statusBadge}
