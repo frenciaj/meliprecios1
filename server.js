@@ -159,7 +159,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.0 - Promotions Summary - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.0.1 - Fix API Response - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2287,7 +2287,16 @@ app.get('/promotions-summary', async (req, res) => {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
 
-        const allPromotions = promosRes.data || [];
+        // Handle different response structures
+        let allPromotions = [];
+        if (Array.isArray(promosRes.data)) {
+            allPromotions = promosRes.data;
+        } else if (promosRes.data?.results) {
+            allPromotions = promosRes.data.results;
+        } else if (promosRes.data?.promotions) {
+            allPromotions = promosRes.data.promotions;
+        }
+
         console.log(`[Promotions Summary] Found ${allPromotions.length} total promotions`);
 
         // Get item counts for each promotion
