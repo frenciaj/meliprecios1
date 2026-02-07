@@ -159,7 +159,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.1 - Promotions Summary (Final) - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.2 - Bulk Remove Items - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2340,6 +2340,7 @@ app.get('/promotions-summary', async (req, res) => {
             const isActive = promo.status === 'active';
             const isExpiringSoon = promo.days_remaining > 0 && promo.days_remaining <= 3;
             const isExpired = promo.days_remaining <= 0;
+            const pType = promo.promotion_type || promo.type || 'SELLER_CAMPAIGN';
 
             let statusBadge = '';
             let statusColor = '#00a650';
@@ -2358,7 +2359,7 @@ app.get('/promotions-summary', async (req, res) => {
             }
 
             return `
-                <div class="card" style="margin-bottom: 20px; border-left: 4px solid ${statusColor};">
+                <div class="card" style="margin-bottom: 20px; border-left: 4px solid ${statusColor}; position: relative;">
                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
                         <div>
                             <h3 style="margin: 0 0 5px 0; color: #333;">${promo.name || 'Sin nombre'}</h3>
@@ -2385,11 +2386,19 @@ app.get('/promotions-summary', async (req, res) => {
                             <span style="font-size: 0.85rem; color: #666;">Productos participando:</span>
                             <span style="font-weight: 700; font-size: 1.1rem; color: #3483fa; margin-left: 8px;">${promo.item_count}</span>
                         </div>
-                        ${!isExpired ? `
-                            <div style="font-size: 0.85rem; color: ${isExpiringSoon ? statusColor : '#666'};">
-                                ${promo.days_remaining > 0 ? `${promo.days_remaining} días restantes` : 'Hoy vence'}
-                            </div>
+                        <div>
+                        ${promo.item_count > 0 ? `
+                            <button onclick="removeAllItems('${promo.id}', '${pType}', '${promo.name || 'Campaña'}')" 
+                                    style="background: #fff0f0; color: #d93025; border: 1px solid #ffcccc; border-radius: 4px; padding: 5px 10px; font-size: 0.8rem; cursor: pointer; margin-right: 10px;">
+                                🗑️ Vaciar
+                            </button>
                         ` : ''}
+                        ${!isExpired ? `
+                            <span style="font-size: 0.85rem; color: ${isExpiringSoon ? statusColor : '#666'};">
+                                ${promo.days_remaining > 0 ? `${promo.days_remaining} días restantes` : 'Hoy vence'}
+                            </span>
+                        ` : ''}
+                        </div>
                     </div>
                 </div>
             `;
@@ -2415,12 +2424,123 @@ app.get('/promotions-summary', async (req, res) => {
                     </div>
                 `}
             </div>
+
+            <script>
+                async function removeAllItems(promoId, promoType, promoName) {
+                    if (!confirm(\`¿Estás seguro de que deseas quitar TODOS los productos de la campaña "\${promoName}"?\\n\\nEsta acción no se puede deshacer.\`)) {
+                        return;
+                    }
+
+                    const btn = event.target;
+                    const originalText = btn.innerHTML;
+                    btn.disabled = true;
+                    btn.innerHTML = '⏳ Vaciando...';
+
+                    try {
+                        const res = await fetch('/remove-all-promotion-items', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ promotion_id: promoId, promotion_type: promoType })
+                        });
+                        
+                        const data = await res.json();
+                        
+                        if (data.success) {
+                            alert(\`Se quitaron \${data.removed_count} productos exitosamente.\` + (data.error_count > 0 ? \` (Hubo \${data.error_count} errores)\` : ''));
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + (data.error || 'Desconocido'));
+                            btn.disabled = false;
+                            btn.innerHTML = originalText;
+                        }
+                    } catch (e) {
+                        alert('Error de conexión: ' + e.message);
+                        btn.disabled = false;
+                        btn.innerHTML = originalText;
+                    }
+                }
+            </script>
         `;
 
         res.send(renderPage('Promociones', content, 'promotions_summary'));
     } catch (error) {
-        console.error('[Promotions Summary] Error:', error.message);
         res.send(renderPage('Error', `<div class="card"><p>Error cargando promociones: ${error.message}</p></div>`, 'promotions_summary'));
+    }
+});
+
+// Remove All Items from Promotion
+app.post('/remove-all-promotion-items', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+    if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const { promotion_id, promotion_type } = req.body;
+    const pType = promotion_type || 'SELLER_CAMPAIGN';
+
+    console.log(`[Bulk Remove] Starting removal for ${promotion_id} (${pType})`);
+
+    try {
+        // 1. Fetch all items in the promotion
+        // Note: Paging might be needed if > 50 items. For now, fetch first batch and loop if needed.
+        // Or just loop until no items left.
+
+        let allItems = [];
+        let offset = 0;
+        let limit = 50;
+        let total = 0;
+
+        // Fetch first page to get total
+        const failSafeLimit = 10; // Max 10 pages to avoid infinite loops
+        let pages = 0;
+
+        do {
+            const itemsRes = await axios.get(
+                `https://api.mercadolibre.com/seller-promotions/promotions/${promotion_id}/items?promotion_type=${pType}&status=started&app_version=v2&limit=${limit}&offset=${offset}`,
+                { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+
+            const results = itemsRes.data.results || itemsRes.data || [];
+            allItems = allItems.concat(results);
+            total = itemsRes.data.paging?.total || results.length;
+            offset += limit;
+            pages++;
+
+        } while (allItems.length < total && pages < failSafeLimit);
+
+        console.log(`[Bulk Remove] Found ${allItems.length} items to remove.`);
+
+        if (allItems.length === 0) {
+            return res.json({ success: true, message: 'No items to remove.', removed_count: 0 });
+        }
+
+        // 2. Remove items one by one (or concurrently with limit)
+        let removedCount = 0;
+        let errorCount = 0;
+
+        // Process in chunks of 5 to avoid rate limits
+        const chunkSize = 5;
+        for (let i = 0; i < allItems.length; i += chunkSize) {
+            const chunk = allItems.slice(i, i + chunkSize);
+            await Promise.all(chunk.map(async (item) => {
+                try {
+                    // DELETE /seller-promotions/items/{item_id}?promotion_type={type}&promotion_id={id}
+                    await axios.delete(
+                        `https://api.mercadolibre.com/seller-promotions/items/${item.id}?promotion_type=${pType}&promotion_id=${promotion_id}&app_version=v2`,
+                        { headers: { Authorization: `Bearer ${accessToken}` } }
+                    );
+                    removedCount++;
+                } catch (e) {
+                    console.error(`[Bulk Remove] Error removing ${item.id}:`, e.message);
+                    errorCount++;
+                }
+            }));
+        }
+
+        console.log(`[Bulk Remove] Finished. Removed: ${removedCount}, Errors: ${errorCount}`);
+        res.json({ success: true, removed_count: removedCount, error_count: errorCount });
+
+    } catch (error) {
+        console.error('[Bulk Remove] Error:', error.message);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
