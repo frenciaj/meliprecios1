@@ -159,7 +159,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.0.2 - Fix Item Count - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.0.3 - Debug Item Count - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2308,6 +2308,11 @@ app.get('/promotions-summary', async (req, res) => {
                         `https://api.mercadolibre.com/seller-promotions/promotions/${promo.id}/items?status=started&app_version=v2`,
                         { headers: { Authorization: `Bearer ${accessToken}` } }
                     );
+
+                    if (promo.id === 'C-MLA850709') { // Log details for one promo to debug
+                        console.log(`[DEBUG Count] Response for ${promo.id}:`, JSON.stringify(itemsRes.data, null, 2));
+                    }
+
                     // Try paging.total first, then fallback to results length
                     itemCount = itemsRes.data?.paging?.total ?? (itemsRes.data?.results?.length || itemsRes.data?.length || 0);
                     console.log(`[Promo ${promo.id}] Items count: ${itemCount}`);
