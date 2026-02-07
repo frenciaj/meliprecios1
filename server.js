@@ -150,6 +150,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     
     <nav class="tabs-nav">
         <a href="/listings" class="tab-link ${activeTab === 'listings' ? 'active' : ''}">Listados</a>
+        <a href="/promotions-summary" class="tab-link ${activeTab === 'promotions_summary' ? 'active' : ''}">Promociones</a>
         <a href="/create-promotion-ui" class="tab-link ${activeTab === 'create_promotion' ? 'active' : ''}">Crear Promoción</a>
     </nav>
 
@@ -158,7 +159,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v13.3 - Default Sort: Sales - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.0 - Promotions Summary - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2267,6 +2268,144 @@ app.get('/debug-suggestions/:id', async (req, res) => {
 app.get('/logout', (req, res) => {
     res.clearCookie('access_token');
     res.redirect('/');
+});
+
+// Promotions Summary
+app.get('/promotions-summary', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+    if (!accessToken) return res.redirect('/');
+
+    try {
+        // Get user ID
+        const userRes = await axios.get('https://api.mercadolibre.com/users/me', {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const userId = userRes.data.id;
+
+        // Fetch all user promotions
+        const promosRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/users/${userId}?app_version=v2`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        const allPromotions = promosRes.data || [];
+        console.log(`[Promotions Summary] Found ${allPromotions.length} total promotions`);
+
+        // Get item counts for each promotion
+        const promotionsWithCounts = await Promise.all(
+            allPromotions.map(async (promo) => {
+                let itemCount = 0;
+                try {
+                    const itemsRes = await axios.get(
+                        `https://api.mercadolibre.com/seller-promotions/promotions/${promo.id}/items?status=started&app_version=v2`,
+                        { headers: { Authorization: `Bearer ${accessToken}` } }
+                    );
+                    itemCount = itemsRes.data?.paging?.total || 0;
+                } catch (e) {
+                    console.error(`[Promo ${promo.id}] Error fetching item count:`, e.message);
+                }
+
+                // Calculate days until expiration
+                const finishDate = new Date(promo.finish_date);
+                const now = new Date();
+                const daysRemaining = Math.ceil((finishDate - now) / (1000 * 60 * 60 * 24));
+
+                return {
+                    ...promo,
+                    item_count: itemCount,
+                    days_remaining: daysRemaining
+                };
+            })
+        );
+
+        // Render summary cards
+        const promoCards = promotionsWithCounts.map(promo => {
+            const startDate = new Date(promo.start_date).toLocaleDateString('es-AR');
+            const finishDate = new Date(promo.finish_date).toLocaleDateString('es-AR');
+            const isActive = promo.status === 'active';
+            const isExpiringSoon = promo.days_remaining > 0 && promo.days_remaining <= 3;
+            const isExpired = promo.days_remaining <= 0;
+
+            let statusBadge = '';
+            let statusColor = '#00a650';
+            if (isExpired) {
+                statusBadge = 'Finalizada';
+                statusColor = '#999';
+            } else if (isExpiringSoon) {
+                statusBadge = '⏰ Vence Pronto';
+                statusColor = '#ff6600';
+            } else if (isActive) {
+                statusBadge = '✓ Activa';
+                statusColor = '#00a650';
+            } else {
+                statusBadge = promo.status;
+                statusColor = '#666';
+            }
+
+            return `
+                <div class="card" style="margin-bottom: 20px; border-left: 4px solid ${statusColor};">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                        <div>
+                            <h3 style="margin: 0 0 5px 0; color: #333;">${promo.name || 'Sin nombre'}</h3>
+                            <div style="font-size: 0.85rem; color: #999;">ID: ${promo.id}</div>
+                        </div>
+                        <div style="background: ${statusColor}; color: white; padding: 5px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 500;">
+                            ${statusBadge}
+                        </div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div>
+                            <div style="font-size: 0.75rem; color: #999; margin-bottom: 3px;">INICIO</div>
+                            <div style="font-weight: 500;">${startDate}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.75rem; color: #999; margin-bottom: 3px;">FIN</div>
+                            <div style="font-weight: 500;">${finishDate}</div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 1px solid #eee;">
+                        <div>
+                            <span style="font-size: 0.85rem; color: #666;">Productos participando:</span>
+                            <span style="font-weight: 700; font-size: 1.1rem; color: #3483fa; margin-left: 8px;">${promo.item_count}</span>
+                        </div>
+                        ${!isExpired ? `
+                            <div style="font-size: 0.85rem; color: ${isExpiringSoon ? statusColor : '#666'};">
+                                ${promo.days_remaining > 0 ? `${promo.days_remaining} días restantes` : 'Hoy vence'}
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const content = `
+            <div style="max-width: 900px; margin: 0 auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+                    <h2 style="margin: 0;">Mis Promociones</h2>
+                    <a href="/create-promotion-ui" class="btn-primary" style="text-decoration: none; display: inline-block;">
+                        + Nueva Promoción
+                    </a>
+                </div>
+
+                ${promotionsWithCounts.length > 0 ? promoCards : `
+                    <div class="card" style="text-align: center; padding: 60px;">
+                        <div style="font-size: 3rem; margin-bottom: 15px;">🏷️</div>
+                        <h3 style="color: #666; font-weight: 400;">No tienes promociones activas</h3>
+                        <p style="color: #999; margin-bottom: 20px;">Crea tu primera campaña de descuentos</p>
+                        <a href="/create-promotion-ui" class="btn-primary" style="text-decoration: none; display: inline-block;">
+                            Crear Promoción
+                        </a>
+                    </div>
+                `}
+            </div>
+        `;
+
+        res.send(renderPage('Promociones', content, 'promotions_summary'));
+    } catch (error) {
+        console.error('[Promotions Summary] Error:', error.message);
+        res.send(renderPage('Error', `<div class="card"><p>Error cargando promociones: ${error.message}</p></div>`, 'promotions_summary'));
+    }
 });
 
 // Create Promotion UI
