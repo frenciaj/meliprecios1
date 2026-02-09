@@ -261,7 +261,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.3 - Scheduling & Bug Fix - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.3.1 - Fix Syntax Error - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2406,8 +2406,7 @@ app.get('/promotions-summary', async (req, res) => {
             allPromotions.map(async (promo) => {
                 let itemCount = 0;
                 try {
-                    // We must include promotion_type. If it's missing in the list, guess from context or try without it.
-                    // But usually the list endpoint returns it.
+                    // We must include promotion_type.
                     const pType = promo.promotion_type || promo.type || 'SELLER_CAMPAIGN';
 
                     const itemsRes = await axios.get(
@@ -2489,7 +2488,6 @@ app.get('/promotions-summary', async (req, res) => {
                             <span style="font-weight: 700; font-size: 1.1rem; color: #3483fa; margin-left: 8px;">${promo.item_count}</span>
                         </div>
                         <div>
-// Button logic update
                         ${promo.item_count > 0 ? `
                             <div style="display: flex; gap: 5px;">
                                 <button onclick="removeAllItems('${promo.id}', '${pType}', '${promo.name || 'Campaña'}')" 
@@ -2502,8 +2500,38 @@ app.get('/promotions-summary', async (req, res) => {
                                 </button>
                             </div>
                         ` : ''}
+                        ${!isExpired ? `
+                            <span style="font-size: 0.85rem; color: ${isExpiringSoon ? statusColor : '#666'};">
+                                ${promo.days_remaining > 0 ? `${promo.days_remaining} días restantes` : 'Hoy vence'}
+                            </span>
+                        ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
 
-// ... inside content string ...
+        const content = `
+            <div style="max-width: 900px; margin: 0 auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+                    <h2 style="margin: 0;">Mis Promociones</h2>
+                    <a href="/create-promotion-ui" class="btn-primary" style="text-decoration: none; display: inline-block;">
+                        + Nueva Promoción
+                    </a>
+                </div>
+
+                ${promotionsWithCounts.length > 0 ? promoCards : `
+                    <div class="card" style="text-align: center; padding: 60px;">
+                        <div style="font-size: 3rem; margin-bottom: 15px;">🏷️</div>
+                        <h3 style="color: #666; font-weight: 400;">No tienes promociones activas</h3>
+                        <p style="color: #999; margin-bottom: 20px;">Crea tu primera campaña de descuentos</p>
+                        <a href="/create-promotion-ui" class="btn-primary" style="text-decoration: none; display: inline-block;">
+                            Crear Promoción
+                        </a>
+                    </div>
+                `}
+            </div>
+
             <!-- Modal for Scheduling -->
             <div id="scheduleModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
                 <div style="background: white; padding: 25px; border-radius: 8px; width: 400px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
@@ -2577,7 +2605,7 @@ app.get('/promotions-summary', async (req, res) => {
                 }
 
                 async function removeAllItems(promoId, promoType, promoName) {
-                    if (!confirm(\`¿Estás seguro de que deseas quitar TODOS los productos de la campaña "\${promoName}"?\\n\\nEsta acción no se puede deshacer.\`)) {
+                    if (!confirm(`¿Estás seguro de que deseas quitar TODOS los productos de la campaña "${promoName}" ?\n\nEsta acción no se puede deshacer.`)) {
                         return;
                     }
 
@@ -2596,7 +2624,7 @@ app.get('/promotions-summary', async (req, res) => {
                         const data = await res.json();
                         
                         if (data.success) {
-                            alert(\`Se quitaron \${data.removed_count} productos exitosamente.\` + (data.error_count > 0 ? \` (Hubo \${data.error_count} errores)\` : ''));
+                            alert(`Se quitaron ${ data.removed_count } productos exitosamente.` + (data.error_count > 0 ? `(Hubo ${ data.error_count } errores)` : ''));
                             window.location.reload();
                         } else {
                             alert('Error: ' + (data.error || 'Desconocido'));
@@ -2612,11 +2640,11 @@ app.get('/promotions-summary', async (req, res) => {
             </script>
         `;
 
-            res.send(renderPage('Promociones', content, 'promotions_summary'));
-        } catch (error) {
-            res.send(renderPage('Error', `<div class="card"><p>Error cargando promociones: ${error.message}</p></div>`, 'promotions_summary'));
-        }
-    });
+        res.send(renderPage('Promociones', content, 'promotions_summary'));
+    } catch (error) {
+        res.send(renderPage('Error', `<div class="card"><p>Error cargando promociones: ${error.message}</p></div>`, 'promotions_summary'));
+    }
+});
 
 // Remove All Items from Promotion
 app.post('/remove-all-promotion-items', async (req, res) => {
