@@ -260,7 +260,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.3.3 - Fix Duplicate Column - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.3.4 - Fix Button Events - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2458,6 +2458,8 @@ app.get('/promotions-summary', async (req, res) => {
                 statusColor = '#666';
             }
 
+            const safeName = (promo.name || 'Campaña').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
             return `
                 <div class="card" style="margin-bottom: 20px; border-left: 4px solid ${statusColor}; position: relative;">
                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
@@ -2489,11 +2491,11 @@ app.get('/promotions-summary', async (req, res) => {
                         <div>
                         ${promo.item_count > 0 ? `
                             <div style="display: flex; gap: 5px;">
-                                <button onclick="removeAllItems('${promo.id}', '${pType}', '${promo.name || 'Campaña'}')" 
+                                <button onclick="removeAllItems('${promo.id}', '${pType}', '${safeName}')" 
                                         style="background: #fff0f0; color: #d93025; border: 1px solid #ffcccc; border-radius: 4px; padding: 5px 10px; font-size: 0.8rem; cursor: pointer;">
                                     🗑️ Vaciar
                                 </button>
-                                <button onclick="openScheduleModal('${promo.id}', '${pType}', '${promo.name || 'Campaña'}')" 
+                                <button onclick="openScheduleModal('${promo.id}', '${pType}', '${safeName}')" 
                                         style="background: #f0f4ff; color: #3483fa; border: 1px solid #cce0ff; border-radius: 4px; padding: 5px 10px; font-size: 0.8rem; cursor: pointer;">
                                     ⏰ Programar
                                 </button>
