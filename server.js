@@ -47,7 +47,6 @@ db.serialize(() => {
         brand TEXT,
         sold_quantity INTEGER DEFAULT 0,
         promotion_name TEXT,
-        promotion_name TEXT,
         PRIMARY KEY (id, user_id)
     )`);
 
@@ -261,7 +260,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.3.2 - Fix Template Literal Nesting - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.3.3 - Fix Duplicate Column - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
