@@ -2605,7 +2605,7 @@ app.get('/promotions-summary', async (req, res) => {
                 }
 
                 async function removeAllItems(promoId, promoType, promoName) {
-                    if (!confirm(`¿Estás seguro de que deseas quitar TODOS los productos de la campaña "${promoName}" ?\n\nEsta acción no se puede deshacer.`)) {
+                    if (!confirm('¿Estás seguro de que deseas quitar TODOS los productos de la campaña "' + promoName + '"?\n\nEsta acción no se puede deshacer.')) {
                         return;
                     }
 
@@ -2624,7 +2624,7 @@ app.get('/promotions-summary', async (req, res) => {
                         const data = await res.json();
                         
                         if (data.success) {
-                            alert(`Se quitaron ${ data.removed_count } productos exitosamente.` + (data.error_count > 0 ? `(Hubo ${ data.error_count } errores)` : ''));
+                            alert('Se quitaron ' + data.removed_count + ' productos exitosamente.' + (data.error_count > 0 ? ' (Hubo ' + data.error_count + ' errores)' : ''));
                             window.location.reload();
                         } else {
                             alert('Error: ' + (data.error || 'Desconocido'));
