@@ -260,7 +260,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.3.4 - Fix Button Events - ${new Date().toISOString()} (Retry Push)</div>
+        <div style="margin-top: 5px;">v14.3.5 - Robust Event Handling - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2458,7 +2458,7 @@ app.get('/promotions-summary', async (req, res) => {
                 statusColor = '#666';
             }
 
-            const safeName = (promo.name || 'Campaña').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const htmlSafeName = (promo.name || 'Campaña').replace(/"/g, '&quot;');
 
             return `
                 <div class="card" style="margin-bottom: 20px; border-left: 4px solid ${statusColor}; position: relative;">
@@ -2491,11 +2491,11 @@ app.get('/promotions-summary', async (req, res) => {
                         <div>
                         ${promo.item_count > 0 ? `
                             <div style="display: flex; gap: 5px;">
-                                <button onclick="removeAllItems('${promo.id}', '${pType}', '${safeName}')" 
+                                <button data-id="${promo.id}" data-type="${pType}" data-name="${htmlSafeName}" onclick="removeAllItems(this)" 
                                         style="background: #fff0f0; color: #d93025; border: 1px solid #ffcccc; border-radius: 4px; padding: 5px 10px; font-size: 0.8rem; cursor: pointer;">
                                     🗑️ Vaciar
                                 </button>
-                                <button onclick="openScheduleModal('${promo.id}', '${pType}', '${safeName}')" 
+                                <button data-id="${promo.id}" data-type="${pType}" data-name="${htmlSafeName}" onclick="openScheduleModal(this)" 
                                         style="background: #f0f4ff; color: #3483fa; border: 1px solid #cce0ff; border-radius: 4px; padding: 5px 10px; font-size: 0.8rem; cursor: pointer;">
                                     ⏰ Programar
                                 </button>
@@ -2556,7 +2556,11 @@ app.get('/promotions-summary', async (req, res) => {
                 let currentPromoId = null;
                 let currentPromoType = null;
 
-                function openScheduleModal(id, type, name) {
+                function openScheduleModal(btn) {
+                    const id = btn.dataset.id;
+                    const type = btn.dataset.type;
+                    const name = btn.dataset.name;
+                    
                     currentPromoId = id;
                     currentPromoType = type;
                     document.getElementById('schedulePromoName').innerText = 'Campaña: ' + name;
@@ -2605,8 +2609,12 @@ app.get('/promotions-summary', async (req, res) => {
                     }
                 }
 
-                async function removeAllItems(promoId, promoType, promoName) {
-                    if (!confirm('¿Estás seguro de que deseas quitar TODOS los productos de la campaña "' + promoName + '"?\n\nEsta acción no se puede deshacer.')) {
+                async function removeAllItems(btn) {
+                    const promoId = btn.dataset.id;
+                    const promoType = btn.dataset.type;
+                    const promoName = btn.dataset.name;
+
+                    if (!confirm('¿Estás seguro de que deseas quitar TODOS los productos de la campaña "' + promoName + '"?\\n\\nEsta acción no se puede deshacer.')) {
                         return;
                     }
 
