@@ -5,7 +5,7 @@ const path = require('path');
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
 const sqlite3 = require('sqlite3').verbose();
-const schedule = require('node-schedule');
+// const schedule = require('node-schedule');
 
 // Initialize Database
 const fs = require('fs');
@@ -110,31 +110,11 @@ const LISTING_TYPE_ALIASES = {
 };
 
 // Load and helper for scheduling
-const activeJobs = new Map();
+// const activeJobs = new Map();
 
 function scheduleRemovalJob(taskId, promoId, promoType, executeAt, accessToken, userId) {
-    if (activeJobs.has(taskId)) {
-        activeJobs.get(taskId).cancel();
-    }
-
-    const job = schedule.scheduleJob(new Date(executeAt), async function () {
-        console.log(`[Job ${taskId}] Executing removal for ${promoId}...`);
-        try {
-            // Re-use logic or call function directly
-            // Since we need access token, and jobs might run later... 
-            // WAIT. Access token expires in 6 hours. If job is days away, token will be invalid.
-            // We need a refresh token mechanism or just accept short-term scheduling.
-            // For now, assume short-term or valid token. If invalid, job fails.
-
-            // Actually, better to just call the API here.
-            await executeRemoval(promoId, promoType, accessToken, taskId);
-        } catch (e) {
-            console.error(`[Job ${taskId}] Failed:`, e.message);
-        }
-    });
-
-    activeJobs.set(taskId, job);
-    console.log(`[Job ${taskId}] Scheduled for ${executeAt}`);
+    // Legacy function placeholder - removed for Serverless compatibility
+    console.log(`[Schedule] Task ${taskId} saved to DB for Cron execution.`);
 }
 
 async function executeRemoval(promoId, promoType, accessToken, taskId) {
@@ -270,7 +250,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.4.3 - DB Serialize Fix - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.4.4 - Removed Node Schedule - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
