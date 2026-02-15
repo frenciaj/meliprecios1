@@ -2774,36 +2774,51 @@ app.post('/schedule-remove-items', (req, res) => {
 // Vercel Cron Endpoint
 app.get('/api/cron/process-queue', (req, res) => {
     console.log('[Cron] Checking for pending tasks...');
+    const now = new Date().toISOString();
 
-    // Find tasks that are pending and should have executed by now (or up to 1 min in future to be safe)
-    db.all(`SELECT * FROM scheduled_tasks WHERE status = 'pending' AND execute_at <= datetime('now', '+1 minute')`, [], async (err, rows) => {
+    // Debug: Get ALL tasks and Current Time
+    db.all(`SELECT *, datetime('now') as server_utc_now FROM scheduled_tasks`, [], async (err, allRows) => {
         if (err) {
             console.error('[Cron] DB Error:', err);
             return res.status(500).json({ error: err.message });
         }
 
-        if (rows.length === 0) {
-            return res.json({ message: 'No pending tasks to execute.' });
-        }
+        const pendingCount = allRows.filter(r => r.status === 'pending').length;
+        console.log(`[Cron] Diagnostic: Found ${allRows.length} total tasks in DB, ${pendingCount} are pending. Server UTC now: ${new Date().toISOString()}`);
 
-        console.log(`[Cron] Found ${rows.length} pending tasks.`);
-        const results = [];
-
-        for (const task of rows) {
-            console.log(`[Cron] Executing Task ${task.id} for Promo ${task.promotion_id}`);
-            try {
-                // Double check status before running to avoid race conditions
-                // (Optimistic locking strategy could be better but simply running is probably fine for this scale)
-
-                await executeRemoval(task.promotion_id, task.promotion_type, task.access_token, task.id);
-                results.push({ id: task.id, status: 'completed' });
-            } catch (e) {
-                console.error(`[Cron] Task ${task.id} Failed:`, e.message);
-                results.push({ id: task.id, status: 'failed', error: e.message });
+        // Find tasks that are pending and should have executed by now
+        db.all(`SELECT * FROM scheduled_tasks WHERE status = 'pending' AND datetime(execute_at) <= datetime('now', '+2 minutes')`, [], async (err, rows) => {
+            if (err) {
+                console.error('[Cron] Filter Error:', err);
+                return res.status(500).json({ error: err.message });
             }
-        }
 
-        res.json({ success: true, results });
+            if (rows.length === 0) {
+                return res.json({
+                    message: 'No pending tasks due for execution.',
+                    debug: {
+                        total_tasks_in_db: allRows.length,
+                        pending_tasks_count: pendingCount,
+                        server_time_utc: new Date().toISOString(),
+                        last_tasks: allRows.slice(-3) // Show last 3 for format inspection
+                    }
+                });
+            }
+
+            console.log(`[Cron] Found ${rows.length} due tasks.`);
+            const results = [];
+            for (const task of rows) {
+                console.log(`[Cron] Executing Task ${task.id} for Promo ${task.promotion_id}`);
+                try {
+                    await executeRemoval(task.promotion_id, task.promotion_type, task.access_token, task.id);
+                    results.push({ id: task.id, status: 'completed' });
+                } catch (e) {
+                    console.error(`[Cron] Task ${task.id} Failed:`, e.message);
+                    results.push({ id: task.id, status: 'failed', error: e.message });
+                }
+            }
+            res.json({ success: true, processed: results.length, details: results });
+        });
     });
 });
 
