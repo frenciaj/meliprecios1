@@ -73,6 +73,13 @@ db.serialize(() => {
             console.error('[Migration] Error adding promotion_name:', err.message);
         }
     });
+
+    // Migration: Add access_token to scheduled_tasks
+    db.run(`ALTER TABLE scheduled_tasks ADD COLUMN access_token TEXT`, (err) => {
+        if (err && !err.message.includes('duplicate column')) {
+            console.error('[Migration] Error adding access_token:', err.message);
+        }
+    });
 });
 
 
@@ -260,7 +267,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.3.6 - Fix Script Syntax Error - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.4.0 - Vercel Cron Enabled - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2735,19 +2742,56 @@ app.post('/schedule-remove-items', (req, res) => {
     // Quick hack: decode JWT or just store blindly? We'll rely on memory token.
     // Ideally we fetch /users/me but for speed lets assume valid.
 
-    const stmt = db.prepare('INSERT INTO scheduled_tasks (promotion_id, promotion_type, execute_at, status) VALUES (?, ?, ?, ?)');
-    stmt.run(promotion_id, pType, execute_at, 'pending', function (err) {
+    const stmt = db.prepare('INSERT INTO scheduled_tasks (promotion_id, promotion_type, execute_at, status, access_token) VALUES (?, ?, ?, ?, ?)');
+    stmt.run(promotion_id, promotion_type, execute_at, 'pending', accessToken, function (err) {
         if (err) {
+            console.error('Schedule Error:', err);
             return res.status(500).json({ success: false, error: err.message });
         }
 
         const taskId = this.lastID;
-        scheduleRemovalJob(taskId, promotion_id, pType, execute_at, accessToken);
+        // Also schedule in-memory for immediate servers
+        scheduleRemovalJob(taskId, promotion_id, promotion_type, execute_at, accessToken);
 
-        console.log(`[Schedule] Task ${taskId} created for ${execute_at}`);
         res.json({ success: true, task_id: taskId, message: 'Tarea programada exitosamente.' });
     });
     stmt.finalize();
+});
+
+// Vercel Cron Endpoint
+app.get('/api/cron/process-queue', (req, res) => {
+    console.log('[Cron] Checking for pending tasks...');
+
+    // Find tasks that are pending and should have executed by now (or up to 1 min in future to be safe)
+    db.all(`SELECT * FROM scheduled_tasks WHERE status = 'pending' AND execute_at <= datetime('now', '+1 minute')`, [], async (err, rows) => {
+        if (err) {
+            console.error('[Cron] DB Error:', err);
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (rows.length === 0) {
+            return res.json({ message: 'No pending tasks to execute.' });
+        }
+
+        console.log(`[Cron] Found ${rows.length} pending tasks.`);
+        const results = [];
+
+        for (const task of rows) {
+            console.log(`[Cron] Executing Task ${task.id} for Promo ${task.promotion_id}`);
+            try {
+                // Double check status before running to avoid race conditions
+                // (Optimistic locking strategy could be better but simply running is probably fine for this scale)
+
+                await executeRemoval(task.promotion_id, task.promotion_type, task.access_token, task.id);
+                results.push({ id: task.id, status: 'completed' });
+            } catch (e) {
+                console.error(`[Cron] Task ${task.id} Failed:`, e.message);
+                results.push({ id: task.id, status: 'failed', error: e.message });
+            }
+        }
+
+        res.json({ success: true, results });
+    });
 });
 
 // Create Promotion UI
