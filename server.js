@@ -25,60 +25,63 @@ const db = new sqlite3.Database(dbPath, (err) => {
 });
 
 db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS items_v14 (
-        id TEXT,
-        user_id TEXT,
-        title TEXT,
-        thumbnail TEXT,
-        price REAL,
-        currency_id TEXT,
-        available_quantity INTEGER,
-        original_price REAL,
-        permalink TEXT,
-        status TEXT,
-        listing_type_id TEXT,
-        sale_price_amount REAL,
-        sale_price_regular_amount REAL,
-        promotion_id TEXT,
-        promotion_type TEXT,
-        price_to_win REAL,
-        last_updated DATETIME,
-        free_shipping INTEGER,
-        brand TEXT,
-        sold_quantity INTEGER DEFAULT 0,
-        promotion_name TEXT,
-        PRIMARY KEY (id, user_id)
-    )`);
+    db.serialize(() => {
+        db.run(`CREATE TABLE IF NOT EXISTS items_v14 (
+            id TEXT,
+            user_id TEXT,
+            title TEXT,
+            thumbnail TEXT,
+            price REAL,
+            currency_id TEXT,
+            available_quantity INTEGER,
+            original_price REAL,
+            permalink TEXT,
+            status TEXT,
+            listing_type_id TEXT,
+            sale_price_amount REAL,
+            sale_price_regular_amount REAL,
+            promotion_id TEXT,
+            promotion_type TEXT,
+            price_to_win REAL,
+            last_updated DATETIME,
+            free_shipping INTEGER,
+            brand TEXT,
+            sold_quantity INTEGER DEFAULT 0,
+            promotion_name TEXT,
+            PRIMARY KEY (id, user_id)
+        )`);
 
-    db.run(`CREATE TABLE IF NOT EXISTS scheduled_tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        promotion_id TEXT,
-        user_id TEXT,
-        promotion_type TEXT,
-        execute_at DATETIME,
-        status TEXT, -- 'pending', 'completed', 'failed'
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+        db.run(`CREATE TABLE IF NOT EXISTS scheduled_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            promotion_id TEXT,
+            user_id TEXT,
+            promotion_type TEXT,
+            execute_at DATETIME,
+            status TEXT, -- 'pending', 'completed', 'failed'
+            access_token TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
 
-    // Migration: Add sold_quantity column if it doesn't exist
-    db.run(`ALTER TABLE items_v14 ADD COLUMN sold_quantity INTEGER DEFAULT 0`, (err) => {
-        if (err && !err.message.includes('duplicate column')) {
-            console.error('[Migration] Error adding sold_quantity:', err.message);
-        }
-    });
+        // Migration: Add sold_quantity column if it doesn't exist
+        db.run(`ALTER TABLE items_v14 ADD COLUMN sold_quantity INTEGER DEFAULT 0`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                // console.error('[Migration] Error adding sold_quantity:', err.message);
+            }
+        });
 
-    // Migration: Add promotion_name column if it doesn't exist
-    db.run(`ALTER TABLE items_v14 ADD COLUMN promotion_name TEXT`, (err) => {
-        if (err && !err.message.includes('duplicate column')) {
-            console.error('[Migration] Error adding promotion_name:', err.message);
-        }
-    });
+        // Migration: Add promotion_name column if it doesn't exist
+        db.run(`ALTER TABLE items_v14 ADD COLUMN promotion_name TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                // console.error('[Migration] Error adding promotion_name:', err.message);
+            }
+        });
 
-    // Migration: Add access_token to scheduled_tasks
-    db.run(`ALTER TABLE scheduled_tasks ADD COLUMN access_token TEXT`, (err) => {
-        if (err && !err.message.includes('duplicate column')) {
-            console.error('[Migration] Error adding access_token:', err.message);
-        }
+        // Migration: Add access_token to scheduled_tasks
+        db.run(`ALTER TABLE scheduled_tasks ADD COLUMN access_token TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                // console.error('[Migration] Error adding access_token:', err.message);
+            }
+        });
     });
 });
 
@@ -267,7 +270,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.4.2 - Fix Syntax Error - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.4.3 - DB Serialize Fix - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
