@@ -132,7 +132,38 @@ process.on('SIGINT', () => {
     process.exit(0);
 });
 
+// Diagnostic route
 const app = express();
+app.get('/db-debug', async (req, res) => {
+    try {
+        const url = process.env.TURSO_URL ? 'PRESENT' : 'MISSING';
+        const token = process.env.TURSO_TOKEN ? 'PRESENT' : 'MISSING';
+
+        console.log(`[Debug] Checking DB connection. URL: ${url}, Token: ${token}`);
+
+        const testResult = await client.execute("SELECT 1 as test");
+        const tables = await client.execute("SELECT name FROM sqlite_master WHERE type='table'");
+
+        res.json({
+            status: 'success',
+            env: { url, token },
+            test_query: testResult.rows[0],
+            tables: tables.rows.map(r => r.name),
+            server_time: new Date().toISOString()
+        });
+    } catch (e) {
+        console.error('[Debug] DB Connection Failed:', e.message);
+        res.status(500).json({
+            status: 'error',
+            error: e.message,
+            stack: e.stack,
+            env_status: {
+                TURSO_URL: process.env.TURSO_URL ? 'Defined' : 'Undefined',
+                TURSO_TOKEN: process.env.TURSO_TOKEN ? 'Defined' : 'Undefined'
+            }
+        });
+    }
+});
 const PORT = process.env.PORT || 3000;
 
 // Global Cache for Fees (persists between requests to minimize API calls)
