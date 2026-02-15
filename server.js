@@ -4,29 +4,76 @@ const crypto = require('crypto');
 const path = require('path');
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
-const sqlite3 = require('sqlite3').verbose();
-// const schedule = require('node-schedule');
+const { createClient } = require('@libsql/client');
 
-// Initialize Database
-const fs = require('fs');
-
-// Initialize Database
-const dbPath = process.env.VERCEL ? '/tmp/meliprecios.db' : 'meliprecios.db';
-console.log(`[Startup] Initializing Database at: ${dbPath}`);
-
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('[Startup] Critical DB Connection Error:', err.message);
-    } else {
-        console.log(`[Startup] Connected to SQLite database at ${dbPath}`);
-        // Enable WAL mode for better concurrency
-        db.run('PRAGMA journal_mode = WAL;');
-    }
+// Initialize Turso Client
+const client = createClient({
+    url: process.env.TURSO_URL || 'libsql://YOUR_DATABASE_URL',
+    authToken: process.env.TURSO_TOKEN || 'YOUR_AUTH_TOKEN',
 });
 
-db.serialize(() => {
-    db.serialize(() => {
-        db.run(`CREATE TABLE IF NOT EXISTS items_v14 (
+// Compatibility wrapper for existing sqlite3 calls
+const db = {
+    run: function (sql, params, callback) {
+        if (typeof params === 'function') { callback = params; params = []; }
+        client.execute({ sql, args: params })
+            .then(result => {
+                const results = {
+                    lastID: result.lastInsertRowid ? String(result.lastInsertRowid) : null,
+                    changes: Number(result.rowsAffected)
+                };
+                if (callback) callback.call(results, null);
+            })
+            .catch(err => {
+                console.error('[Turso DB Error] run:', err.message, sql);
+                if (callback) callback(err);
+            });
+    },
+    all: function (sql, params, callback) {
+        if (typeof params === 'function') { callback = params; params = []; }
+        client.execute({ sql, args: params })
+            .then(result => {
+                if (callback) callback(null, result.rows);
+            })
+            .catch(err => {
+                console.error('[Turso DB Error] all:', err.message, sql);
+                if (callback) callback(err);
+            });
+    },
+    get: function (sql, params, callback) {
+        if (typeof params === 'function') { callback = params; params = []; }
+        client.execute({ sql, args: params })
+            .then(result => {
+                if (callback) callback(null, result.rows[0]);
+            })
+            .catch(err => {
+                console.error('[Turso DB Error] get:', err.message, sql);
+                if (callback) callback(err);
+            });
+    },
+    prepare: function (sql) {
+        const self = this;
+        return {
+            run: function (...args) {
+                const callback = typeof args[args.length - 1] === 'function' ? args.pop() : null;
+                self.run(sql, args, callback);
+            },
+            finalize: function () { }
+        };
+    },
+    serialize: function (callback) {
+        callback();
+    },
+    close: function (callback) {
+        if (callback) callback();
+    }
+};
+
+// Initialize Tables and Migrations
+async function initDb() {
+    try {
+        console.log('[Turso] Initializing Database...');
+        await client.execute(`CREATE TABLE IF NOT EXISTS items_v14 (
             id TEXT,
             user_id TEXT,
             title TEXT,
@@ -51,7 +98,7 @@ db.serialize(() => {
             PRIMARY KEY (id, user_id)
         )`);
 
-        db.run(`CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        await client.execute(`CREATE TABLE IF NOT EXISTS scheduled_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             promotion_id TEXT,
             user_id TEXT,
@@ -62,36 +109,27 @@ db.serialize(() => {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`);
 
-        // Migration: Add sold_quantity column if it doesn't exist
-        db.run(`ALTER TABLE items_v14 ADD COLUMN sold_quantity INTEGER DEFAULT 0`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                // console.error('[Migration] Error adding sold_quantity:', err.message);
-            }
-        });
+        // Migrations
+        const migrations = [
+            `ALTER TABLE items_v14 ADD COLUMN sold_quantity INTEGER DEFAULT 0`,
+            `ALTER TABLE items_v14 ADD COLUMN promotion_name TEXT`,
+            `ALTER TABLE scheduled_tasks ADD COLUMN access_token TEXT`
+        ];
 
-        // Migration: Add promotion_name column if it doesn't exist
-        db.run(`ALTER TABLE items_v14 ADD COLUMN promotion_name TEXT`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                // console.error('[Migration] Error adding promotion_name:', err.message);
-            }
-        });
+        for (const sql of migrations) {
+            try { await client.execute(sql); } catch (e) { /* Ignore if column exists */ }
+        }
+        console.log('[Turso] Database Connection Active.');
+    } catch (e) {
+        console.error('[Turso Init Error]', e.message);
+    }
+}
+initDb();
 
-        // Migration: Add access_token to scheduled_tasks
-        db.run(`ALTER TABLE scheduled_tasks ADD COLUMN access_token TEXT`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                // console.error('[Migration] Error adding access_token:', err.message);
-            }
-        });
-    });
-});
-
-
-// Ensure DB is closed on exit
+// SIGINT hook
 process.on('SIGINT', () => {
-    db.close(() => {
-        console.log('DB Connection closed.');
-        process.exit(0);
-    });
+    console.log('Exiting...');
+    process.exit(0);
 });
 
 const app = express();
@@ -250,7 +288,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.4.6 - Daily Cron Fix - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.5.0 - Turso Persistence - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
