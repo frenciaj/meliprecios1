@@ -267,7 +267,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.4.0 - Vercel Cron Enabled - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.4.1 - Show Scheduled Date - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2423,51 +2423,83 @@ app.get('/promotions-summary', async (req, res) => {
                     // Try paging.total first, then fallback to results length
                     itemCount = itemsRes.data?.paging?.total ?? (itemsRes.data?.results?.length || itemsRes.data?.length || 0);
                     // console.log(`[Promo ${promo.id}] Items count: ${itemCount}`);
-                } catch (e) {
-                    console.error(`[Promo ${promo.id}] Error fetching item count:`, e.message);
-                }
+                    const strategies = allPromotions.map(async (promo) => {
+                        let itemCount = 0;
+                        try {
+                            // We must include promotion_type.
+                            const pType = promo.promotion_type || promo.type || 'SELLER_CAMPAIGN';
 
-                // Calculate days until expiration
-                const finishDate = new Date(promo.finish_date);
-                const now = new Date();
-                const daysRemaining = Math.ceil((finishDate - now) / (1000 * 60 * 60 * 24));
+                            const itemsRes = await axios.get(
+                                `https://api.mercadolibre.com/seller-promotions/promotions/${promo.id}/items?promotion_type=${pType}&status=started&app_version=v2`,
+                                { headers: { Authorization: `Bearer ${accessToken}` } }
+                            );
 
-                return {
-                    ...promo,
-                    item_count: itemCount,
-                    days_remaining: daysRemaining
-                };
-            })
-        );
+                            // Try paging.total first, then fallback to results length
+                            itemCount = itemsRes.data?.paging?.total ?? (itemsRes.data?.results?.length || itemsRes.data?.length || 0);
+                            // console.log(`[Promo ${promo.id}] Items count: ${itemCount}`);
+                        } catch (e) {
+                            console.error(`[Promo ${promo.id}] Error fetching item count:`, e.message);
+                        }
 
-        // Render summary cards
-        const promoCards = promotionsWithCounts.map(promo => {
-            const startDate = new Date(promo.start_date).toLocaleDateString('es-AR');
-            const finishDate = new Date(promo.finish_date).toLocaleDateString('es-AR');
-            const isActive = promo.status === 'active';
-            const isExpiringSoon = promo.days_remaining > 0 && promo.days_remaining <= 3;
-            const isExpired = promo.days_remaining <= 0;
-            const pType = promo.promotion_type || promo.type || 'SELLER_CAMPAIGN';
+                        // Calculate days until expiration
+                        const finishDate = new Date(promo.finish_date);
+                        const now = new Date();
+                        const daysRemaining = Math.ceil((finishDate - now) / (1000 * 60 * 60 * 24));
 
-            let statusBadge = '';
-            let statusColor = '#00a650';
-            if (isExpired) {
-                statusBadge = 'Finalizada';
-                statusColor = '#999';
-            } else if (isExpiringSoon) {
-                statusBadge = '⏰ Vence Pronto';
-                statusColor = '#ff6600';
-            } else if (isActive) {
-                statusBadge = '✓ Activa';
-                statusColor = '#00a650';
-            } else {
-                statusBadge = promo.status;
-                statusColor = '#666';
-            }
+                        return {
+                            ...promo,
+                            item_count: itemCount,
+                            days_remaining: daysRemaining
+                        };
+                    });
 
-            const htmlSafeName = (promo.name || 'Campaña').replace(/"/g, '&quot;');
+                    const promotionsWithCounts = await Promise.all(strategies);
 
-            return `
+                    // Render summary cards
+                    const promoCards = promotionsWithCounts.map(promo => {
+                        const startDate = new Date(promo.start_date).toLocaleDateString('es-AR');
+                        const finishDate = new Date(promo.finish_date).toLocaleDateString('es-AR');
+                        const isActive = promo.status === 'active';
+                        const isExpiringSoon = promo.days_remaining > 0 && promo.days_remaining <= 3;
+                        const isExpired = promo.days_remaining <= 0;
+                        const pType = promo.promotion_type || promo.type || 'SELLER_CAMPAIGN';
+
+                        let statusBadge = '';
+                        let statusColor = '#00a650';
+                        if (isExpired) {
+                            statusBadge = 'Finalizada';
+                            statusColor = '#999';
+                        } else if (isExpiringSoon) {
+                            statusBadge = '⏰ Vence Pronto';
+                            statusColor = '#ff6600';
+                        } else if (isActive) {
+                            statusBadge = '✓ Activa';
+                            statusColor = '#00a650';
+                        } else {
+                            statusBadge = promo.status;
+                            statusColor = '#666';
+                        }
+
+                        const htmlSafeName = (promo.name || 'Campaña').replace(/"/g, '&quot;');
+
+                        // Check for scheduled task
+                        const scheduledAt = scheduledMap.get(promo.id);
+                        let scheduledBadge = '';
+                        let programBtnText = '⏰ Programar';
+
+                        if (scheduledAt) {
+                            const dateObj = new Date(scheduledAt);
+                            const readableDate = dateObj.toLocaleString('es-AR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                            scheduledBadge = `
+                    <div style="margin-top: 10px; background: #e3f2fd; color: #1565c0; padding: 6px 10px; border-radius: 4px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px;">
+                        <span>⏳</span>
+                        <strong>Fin Programado:</strong> ${readableDate}
+                    </div>
+                `;
+                            programBtnText = '✏️ Reprogramar';
+                        }
+
+                        return `
                 <div class="card" style="margin-bottom: 20px; border-left: 4px solid ${statusColor}; position: relative;">
                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
                         <div>
@@ -2479,7 +2511,7 @@ app.get('/promotions-summary', async (req, res) => {
                         </div>
                     </div>
                     
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 5px;">
                         <div>
                             <div style="font-size: 0.75rem; color: #999; margin-bottom: 3px;">INICIO</div>
                             <div style="font-weight: 500;">${startDate}</div>
@@ -2489,8 +2521,10 @@ app.get('/promotions-summary', async (req, res) => {
                             <div style="font-weight: 500;">${finishDate}</div>
                         </div>
                     </div>
+                    
+                    ${scheduledBadge}
 
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 1px solid #eee;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; margin-top: 10px; border-top: 1px solid #eee;">
                         <div>
                             <span style="font-size: 0.85rem; color: #666;">Productos participando:</span>
                             <span style="font-weight: 700; font-size: 1.1rem; color: #3483fa; margin-left: 8px;">${promo.item_count}</span>
@@ -2504,7 +2538,7 @@ app.get('/promotions-summary', async (req, res) => {
                                 </button>
                                 <button data-id="${promo.id}" data-type="${pType}" data-name="${htmlSafeName}" onclick="openScheduleModal(this)" 
                                         style="background: #f0f4ff; color: #3483fa; border: 1px solid #cce0ff; border-radius: 4px; padding: 5px 10px; font-size: 0.8rem; cursor: pointer;">
-                                    ⏰ Programar
+                                    ${programBtnText}
                                 </button>
                             </div>
                         ` : ''}
@@ -2517,9 +2551,9 @@ app.get('/promotions-summary', async (req, res) => {
                     </div>
                 </div>
             `;
-        }).join('');
+                    }).join('');
 
-        const content = `
+                    const content = `
             <div style="max-width: 900px; margin: 0 auto;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
                     <h2 style="margin: 0;">Mis Promociones</h2>
@@ -2655,151 +2689,151 @@ app.get('/promotions-summary', async (req, res) => {
             </script>
         `;
 
-        res.send(renderPage('Promociones', content, 'promotions_summary'));
-    } catch (error) {
-        res.send(renderPage('Error', `<div class="card"><p>Error cargando promociones: ${error.message}</p></div>`, 'promotions_summary'));
-    }
-});
+                    res.send(renderPage('Promociones', content, 'promotions_summary'));
+                } catch (error) {
+                    res.send(renderPage('Error', `<div class="card"><p>Error cargando promociones: ${error.message}</p></div>`, 'promotions_summary'));
+                }
+            });
 
-// Remove All Items from Promotion
-app.post('/remove-all-promotion-items', async (req, res) => {
-    const accessToken = req.cookies.access_token;
-    if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
+        // Remove All Items from Promotion
+        app.post('/remove-all-promotion-items', async (req, res) => {
+            const accessToken = req.cookies.access_token;
+            if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-    const { promotion_id, promotion_type } = req.body;
-    const pType = promotion_type || 'SELLER_CAMPAIGN';
+            const { promotion_id, promotion_type } = req.body;
+            const pType = promotion_type || 'SELLER_CAMPAIGN';
 
-    console.log(`[Bulk Remove] Starting removal for ${promotion_id} (${pType})`);
+            console.log(`[Bulk Remove] Starting removal for ${promotion_id} (${pType})`);
 
-    try {
-        // Reuse the logic? Or just fix it here. Let's fix it here for immediacy.
-        let allItems = [];
-        let offset = 0;
-        let limit = 50;
-        let total = 0;
-        let pages = 0;
-        const failSafeLimit = 10;
+            try {
+                // Reuse the logic? Or just fix it here. Let's fix it here for immediacy.
+                let allItems = [];
+                let offset = 0;
+                let limit = 50;
+                let total = 0;
+                let pages = 0;
+                const failSafeLimit = 10;
 
-        do {
-            const itemsRes = await axios.get(
-                `https://api.mercadolibre.com/seller-promotions/promotions/${promotion_id}/items?promotion_type=${pType}&status=started&app_version=v2&limit=${limit}&offset=${offset}`,
-                { headers: { Authorization: `Bearer ${accessToken}` } }
-            );
-
-            const results = itemsRes.data.results || itemsRes.data || [];
-            allItems = allItems.concat(results);
-            total = itemsRes.data.paging?.total || results.length;
-            offset += limit;
-            pages++;
-
-        } while (allItems.length < total && pages < failSafeLimit);
-
-        console.log(`[Bulk Remove] Found ${allItems.length} items to remove.`);
-
-        if (allItems.length === 0) {
-            return res.json({ success: true, message: 'No items to remove.', removed_count: 0 });
-        }
-
-        let removedCount = 0;
-        let errorCount = 0;
-        const chunkSize = 5;
-
-        for (let i = 0; i < allItems.length; i += chunkSize) {
-            const chunk = allItems.slice(i, i + chunkSize);
-            await Promise.all(chunk.map(async (item) => {
-                const itemId = item.id || item; // Fix: Handle potential string vs object
-                try {
-                    await axios.delete(
-                        `https://api.mercadolibre.com/seller-promotions/items/${itemId}?promotion_type=${pType}&promotion_id=${promotion_id}&app_version=v2`,
+                do {
+                    const itemsRes = await axios.get(
+                        `https://api.mercadolibre.com/seller-promotions/promotions/${promotion_id}/items?promotion_type=${pType}&status=started&app_version=v2&limit=${limit}&offset=${offset}`,
                         { headers: { Authorization: `Bearer ${accessToken}` } }
                     );
-                    removedCount++;
-                } catch (e) {
-                    console.error(`[Bulk Remove] Error removing ${itemId}:`, e.message);
-                    errorCount++;
+
+                    const results = itemsRes.data.results || itemsRes.data || [];
+                    allItems = allItems.concat(results);
+                    total = itemsRes.data.paging?.total || results.length;
+                    offset += limit;
+                    pages++;
+
+                } while (allItems.length < total && pages < failSafeLimit);
+
+                console.log(`[Bulk Remove] Found ${allItems.length} items to remove.`);
+
+                if (allItems.length === 0) {
+                    return res.json({ success: true, message: 'No items to remove.', removed_count: 0 });
                 }
-            }));
-        }
 
-        console.log(`[Bulk Remove] Finished. Removed: ${removedCount}, Errors: ${errorCount}`);
-        res.json({ success: true, removed_count: removedCount, error_count: errorCount });
+                let removedCount = 0;
+                let errorCount = 0;
+                const chunkSize = 5;
 
-    } catch (error) {
-        console.error('[Bulk Remove] Error:', error.message);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+                for (let i = 0; i < allItems.length; i += chunkSize) {
+                    const chunk = allItems.slice(i, i + chunkSize);
+                    await Promise.all(chunk.map(async (item) => {
+                        const itemId = item.id || item; // Fix: Handle potential string vs object
+                        try {
+                            await axios.delete(
+                                `https://api.mercadolibre.com/seller-promotions/items/${itemId}?promotion_type=${pType}&promotion_id=${promotion_id}&app_version=v2`,
+                                { headers: { Authorization: `Bearer ${accessToken}` } }
+                            );
+                            removedCount++;
+                        } catch (e) {
+                            console.error(`[Bulk Remove] Error removing ${itemId}:`, e.message);
+                            errorCount++;
+                        }
+                    }));
+                }
 
-// Schedule Removal
-app.post('/schedule-remove-items', (req, res) => {
-    const accessToken = req.cookies.access_token;
-    if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
+                console.log(`[Bulk Remove] Finished. Removed: ${removedCount}, Errors: ${errorCount}`);
+                res.json({ success: true, removed_count: removedCount, error_count: errorCount });
 
-    const { promotion_id, promotion_type, execute_at, promotion_name } = req.body;
-    const pType = promotion_type || 'SELLER_CAMPAIGN';
-
-    // Get user ID (needed for DB record)
-    // Quick hack: decode JWT or just store blindly? We'll rely on memory token.
-    // Ideally we fetch /users/me but for speed lets assume valid.
-
-    const stmt = db.prepare('INSERT INTO scheduled_tasks (promotion_id, promotion_type, execute_at, status, access_token) VALUES (?, ?, ?, ?, ?)');
-    stmt.run(promotion_id, promotion_type, execute_at, 'pending', accessToken, function (err) {
-        if (err) {
-            console.error('Schedule Error:', err);
-            return res.status(500).json({ success: false, error: err.message });
-        }
-
-        const taskId = this.lastID;
-        // Also schedule in-memory for immediate servers
-        scheduleRemovalJob(taskId, promotion_id, promotion_type, execute_at, accessToken);
-
-        res.json({ success: true, task_id: taskId, message: 'Tarea programada exitosamente.' });
-    });
-    stmt.finalize();
-});
-
-// Vercel Cron Endpoint
-app.get('/api/cron/process-queue', (req, res) => {
-    console.log('[Cron] Checking for pending tasks...');
-
-    // Find tasks that are pending and should have executed by now (or up to 1 min in future to be safe)
-    db.all(`SELECT * FROM scheduled_tasks WHERE status = 'pending' AND execute_at <= datetime('now', '+1 minute')`, [], async (err, rows) => {
-        if (err) {
-            console.error('[Cron] DB Error:', err);
-            return res.status(500).json({ error: err.message });
-        }
-
-        if (rows.length === 0) {
-            return res.json({ message: 'No pending tasks to execute.' });
-        }
-
-        console.log(`[Cron] Found ${rows.length} pending tasks.`);
-        const results = [];
-
-        for (const task of rows) {
-            console.log(`[Cron] Executing Task ${task.id} for Promo ${task.promotion_id}`);
-            try {
-                // Double check status before running to avoid race conditions
-                // (Optimistic locking strategy could be better but simply running is probably fine for this scale)
-
-                await executeRemoval(task.promotion_id, task.promotion_type, task.access_token, task.id);
-                results.push({ id: task.id, status: 'completed' });
-            } catch (e) {
-                console.error(`[Cron] Task ${task.id} Failed:`, e.message);
-                results.push({ id: task.id, status: 'failed', error: e.message });
+            } catch (error) {
+                console.error('[Bulk Remove] Error:', error.message);
+                res.status(500).json({ success: false, error: error.message });
             }
-        }
+        });
 
-        res.json({ success: true, results });
-    });
-});
+        // Schedule Removal
+        app.post('/schedule-remove-items', (req, res) => {
+            const accessToken = req.cookies.access_token;
+            if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-// Create Promotion UI
-app.get('/create-promotion-ui', (req, res) => {
-    const accessToken = req.cookies.access_token;
-    if (!accessToken) return res.redirect('/');
+            const { promotion_id, promotion_type, execute_at, promotion_name } = req.body;
+            const pType = promotion_type || 'SELLER_CAMPAIGN';
 
-    const content = `
+            // Get user ID (needed for DB record)
+            // Quick hack: decode JWT or just store blindly? We'll rely on memory token.
+            // Ideally we fetch /users/me but for speed lets assume valid.
+
+            const stmt = db.prepare('INSERT INTO scheduled_tasks (promotion_id, promotion_type, execute_at, status, access_token) VALUES (?, ?, ?, ?, ?)');
+            stmt.run(promotion_id, promotion_type, execute_at, 'pending', accessToken, function (err) {
+                if (err) {
+                    console.error('Schedule Error:', err);
+                    return res.status(500).json({ success: false, error: err.message });
+                }
+
+                const taskId = this.lastID;
+                // Also schedule in-memory for immediate servers
+                scheduleRemovalJob(taskId, promotion_id, promotion_type, execute_at, accessToken);
+
+                res.json({ success: true, task_id: taskId, message: 'Tarea programada exitosamente.' });
+            });
+            stmt.finalize();
+        });
+
+        // Vercel Cron Endpoint
+        app.get('/api/cron/process-queue', (req, res) => {
+            console.log('[Cron] Checking for pending tasks...');
+
+            // Find tasks that are pending and should have executed by now (or up to 1 min in future to be safe)
+            db.all(`SELECT * FROM scheduled_tasks WHERE status = 'pending' AND execute_at <= datetime('now', '+1 minute')`, [], async (err, rows) => {
+                if (err) {
+                    console.error('[Cron] DB Error:', err);
+                    return res.status(500).json({ error: err.message });
+                }
+
+                if (rows.length === 0) {
+                    return res.json({ message: 'No pending tasks to execute.' });
+                }
+
+                console.log(`[Cron] Found ${rows.length} pending tasks.`);
+                const results = [];
+
+                for (const task of rows) {
+                    console.log(`[Cron] Executing Task ${task.id} for Promo ${task.promotion_id}`);
+                    try {
+                        // Double check status before running to avoid race conditions
+                        // (Optimistic locking strategy could be better but simply running is probably fine for this scale)
+
+                        await executeRemoval(task.promotion_id, task.promotion_type, task.access_token, task.id);
+                        results.push({ id: task.id, status: 'completed' });
+                    } catch (e) {
+                        console.error(`[Cron] Task ${task.id} Failed:`, e.message);
+                        results.push({ id: task.id, status: 'failed', error: e.message });
+                    }
+                }
+
+                res.json({ success: true, results });
+            });
+        });
+
+        // Create Promotion UI
+        app.get('/create-promotion-ui', (req, res) => {
+            const accessToken = req.cookies.access_token;
+            if (!accessToken) return res.redirect('/');
+
+            const content = `
         <div class="card" style="max-width: 600px; margin: 40px auto;">
             <h2 style="margin-bottom: 20px; color: #333;">Crear Nueva Promoción</h2>
             <p style="color: #666; margin-bottom: 30px;">Crea una campaña de descuento para tus productos. Luego, podrás agregar productos a esta campaña desde la pestaña "Listados".</p>
@@ -2878,46 +2912,46 @@ app.get('/create-promotion-ui', (req, res) => {
         </script>
     `;
 
-    res.send(renderPage('Crear Promoción', content, 'create_promotion'));
-});
-
-// Create Promotion API
-app.post('/create-promotion', async (req, res) => {
-    const accessToken = req.cookies.access_token;
-    if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
-
-    const { name, percent, days } = req.body;
-
-    // Calculate dates
-    const startDate = new Date();
-    const endDate = new Date();
-    endDate.setDate(startDate.getDate() + days);
-
-    const payload = {
-        promotion_type: 'SELLER_CAMPAIGN',
-        sub_type: 'FLEXIBLE_PERCENTAGE',
-        name: name,
-        start_date: startDate.toISOString().split('.')[0],
-        finish_date: endDate.toISOString().split('.')[0]
-    };
-
-    console.log('[Create Promo] Payload:', payload);
-
-    try {
-        const createRes = await axios.post('https://api.mercadolibre.com/seller-promotions/promotions?app_version=v2', payload, {
-            headers: { Authorization: `Bearer ${accessToken}` }
+            res.send(renderPage('Crear Promoción', content, 'create_promotion'));
         });
 
-        console.log('[Create Promo] Success:', createRes.data);
-        res.json({ success: true, data: createRes.data });
-    } catch (error) {
-        console.error('[Create Promo] Error:', error.response?.data || error.message);
-        res.status(500).json({ success: false, error: error.response?.data?.message || error.message });
-    }
-});
+        // Create Promotion API
+        app.post('/create-promotion', async (req, res) => {
+            const accessToken = req.cookies.access_token;
+            if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-module.exports = app;
+            const { name, percent, days } = req.body;
 
-if (require.main === module) {
-    app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
-}
+            // Calculate dates
+            const startDate = new Date();
+            const endDate = new Date();
+            endDate.setDate(startDate.getDate() + days);
+
+            const payload = {
+                promotion_type: 'SELLER_CAMPAIGN',
+                sub_type: 'FLEXIBLE_PERCENTAGE',
+                name: name,
+                start_date: startDate.toISOString().split('.')[0],
+                finish_date: endDate.toISOString().split('.')[0]
+            };
+
+            console.log('[Create Promo] Payload:', payload);
+
+            try {
+                const createRes = await axios.post('https://api.mercadolibre.com/seller-promotions/promotions?app_version=v2', payload, {
+                    headers: { Authorization: `Bearer ${accessToken}` }
+                });
+
+                console.log('[Create Promo] Success:', createRes.data);
+                res.json({ success: true, data: createRes.data });
+            } catch (error) {
+                console.error('[Create Promo] Error:', error.response?.data || error.message);
+                res.status(500).json({ success: false, error: error.response?.data?.message || error.message });
+            }
+        });
+
+        module.exports = app;
+
+        if (require.main === module) {
+            app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+        }
