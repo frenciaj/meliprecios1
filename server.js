@@ -7,8 +7,13 @@ require('dotenv').config();
 const { createClient } = require('@libsql/client');
 
 // Initialize Turso Client
+let tursoUrl = process.env.TURSO_URL || 'libsql://YOUR_DATABASE_URL';
+if (tursoUrl.startsWith('libsql://')) {
+    tursoUrl = 'https://' + tursoUrl.substring(9);
+}
+
 const client = createClient({
-    url: process.env.TURSO_URL || 'libsql://YOUR_DATABASE_URL',
+    url: tursoUrl,
     authToken: process.env.TURSO_TOKEN || 'YOUR_AUTH_TOKEN',
 });
 
@@ -319,7 +324,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.5.0 - Turso Persistence - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.5.2 - Turso HTTPS Fix - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
