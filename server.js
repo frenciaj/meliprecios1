@@ -17,51 +17,61 @@ const client = createClient({
     authToken: process.env.TURSO_TOKEN || 'YOUR_AUTH_TOKEN',
 });
 
-// Compatibility wrapper for existing sqlite3 calls
+// Compatibility wrapper for existing sqlite3 calls (Enhanced for Promises & LibSQL)
 const db = {
     run: function (sql, params, callback) {
         if (typeof params === 'function') { callback = params; params = []; }
-        client.execute({ sql, args: params })
+        const p = client.execute({ sql, args: params })
             .then(result => {
                 const results = {
                     lastID: result.lastInsertRowid ? String(result.lastInsertRowid) : null,
+                    rowsAffected: Number(result.rowsAffected),
                     changes: Number(result.rowsAffected)
                 };
                 if (callback) callback.call(results, null);
+                return results;
             })
             .catch(err => {
                 console.error('[Turso DB Error] run:', err.message, sql);
                 if (callback) callback(err);
+                throw err;
             });
+        return p;
     },
     all: function (sql, params, callback) {
         if (typeof params === 'function') { callback = params; params = []; }
-        client.execute({ sql, args: params })
+        const p = client.execute({ sql, args: params })
             .then(result => {
                 if (callback) callback(null, result.rows);
+                return result.rows;
             })
             .catch(err => {
                 console.error('[Turso DB Error] all:', err.message, sql);
                 if (callback) callback(err);
+                throw err;
             });
+        return p;
     },
     get: function (sql, params, callback) {
         if (typeof params === 'function') { callback = params; params = []; }
-        client.execute({ sql, args: params })
+        const p = client.execute({ sql, args: params })
             .then(result => {
                 if (callback) callback(null, result.rows[0]);
+                return result.rows[0];
             })
             .catch(err => {
                 console.error('[Turso DB Error] get:', err.message, sql);
                 if (callback) callback(err);
+                throw err;
             });
+        return p;
     },
     prepare: function (sql) {
         const self = this;
         return {
             run: function (...args) {
                 const callback = typeof args[args.length - 1] === 'function' ? args.pop() : null;
-                self.run(sql, args, callback);
+                return self.run(sql, args, callback);
             },
             finalize: function () { }
         };
@@ -71,6 +81,10 @@ const db = {
     },
     close: function (callback) {
         if (callback) callback();
+    },
+    // New: Batch support for performance
+    batch: function (queries) {
+        return client.batch(queries);
     }
 };
 
@@ -324,7 +338,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.5.2 - Turso HTTPS Fix - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.6.0 - Reliable Sync Persistence - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2295,7 +2309,7 @@ app.post('/sync-listings', async (req, res) => {
                 headers: { Authorization: `Bearer ${accessToken}` }
             });
 
-            const strategies = itemsRes.data.map(async (r) => {
+            const processedItems = (await Promise.all(itemsRes.data.map(async (r) => {
                 if (!r.body || r.code !== 200) return null;
                 const item = r.body;
 
@@ -2307,12 +2321,10 @@ app.post('/sync-listings', async (req, res) => {
                 let promoName = null;
 
                 try {
-                    // Fetch active promotion from seller-promotions endpoint
                     const promoRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${item.id}?app_version=v2`, {
                         headers: { Authorization: `Bearer ${accessToken}` }
                     }).catch(() => ({ data: [] }));
 
-                    // Find the active/started promotion
                     const activePromo = promoRes.data?.find(p => p.status === 'started');
                     if (activePromo) {
                         promoId = activePromo.id;
@@ -2320,9 +2332,7 @@ app.post('/sync-listings', async (req, res) => {
                         promoName = activePromo.name || activePromo.campaign_name || null;
                         salePrice = activePromo.price;
                         saleOriginal = activePromo.original_price;
-                        console.log(`[Sync] Found active promo for ${item.id}: ${promoId} (${promoType}) name: ${promoName}`);
                     } else {
-                        // Fallback to sale_price endpoint if no active promo found
                         const spRes = await axios.get(`https://api.mercadolibre.com/items/${item.id}/sale_price`, {
                             headers: { Authorization: `Bearer ${accessToken}` }
                         }).catch(() => ({ data: {} }));
@@ -2334,17 +2344,11 @@ app.post('/sync-listings', async (req, res) => {
                             promoName = spRes.data.metadata?.name || spRes.data.metadata?.campaign_name || null;
                         }
                     }
-                } catch (e) {
-                    console.error(`[Sync] Error fetching promo for ${item.id}:`, e.message);
-                }
-
-                // C. Extra Data
-                const freeShipping = item.shipping?.free_shipping ? 1 : 0;
-                const brandAttr = item.attributes?.find(a => a.id === 'BRAND')?.value_name || '';
-                const soldQty = item.sold_quantity || 0;
+                } catch (e) { }
 
                 return {
                     id: item.id,
+                    userId,
                     title: item.title,
                     thumbnail: item.thumbnail,
                     price: item.price,
@@ -2359,30 +2363,25 @@ app.post('/sync-listings', async (req, res) => {
                     promotion_id: promoId,
                     promotion_type: promoType,
                     promotion_name: promoName,
-                    price_to_win: 0, // Placeholder
+                    price_to_win: 0,
                     last_updated: new Date().toISOString(),
-                    free_shipping: freeShipping,
-                    brand: brandAttr,
-                    sold_quantity: soldQty
+                    free_shipping: item.shipping?.free_shipping ? 1 : 0,
+                    brand: item.attributes?.find(a => a.id === 'BRAND')?.value_name || '',
+                    sold_quantity: item.sold_quantity || 0
                 };
-            });
+            }))).filter(i => i !== null);
 
-            const processedItems = (await Promise.all(strategies)).filter(i => i !== null);
+            // D. Upsert to DB using LibSQL Batch (Truly Atomic & Blocking)
+            if (processedItems.length > 0) {
+                const queries = processedItems.map(item => ({
+                    sql: `INSERT OR REPLACE INTO items_v14 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping, brand, sold_quantity, promotion_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    args: [item.id, item.userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping, item.brand, item.sold_quantity, item.promotion_name]
+                }));
 
-            // D. Upsert to DB with user_id
-            const stmt = db.prepare(`INSERT OR REPLACE INTO items_v14 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping, brand, sold_quantity, promotion_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-
-            db.serialize(() => {
-                db.run("BEGIN TRANSACTION");
-                processedItems.forEach(item => {
-                    stmt.run(item.id, userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping, item.brand, item.sold_quantity, item.promotion_name);
-                });
-                db.run("COMMIT");
-            });
-            stmt.finalize();
-
-            processedCount += processedItems.length;
-            console.log(`[Sync] Processed ${processedCount}/${itemIds.length} items`);
+                await client.batch(queries, "write");
+                processedCount += processedItems.length;
+                console.log(`[Sync] Batch Success. Processed ${processedCount}/${itemIds.length}`);
+            }
         }
 
         res.json({ success: true, count: processedCount });
