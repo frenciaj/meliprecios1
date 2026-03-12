@@ -2373,10 +2373,36 @@ app.post('/sync-listings', async (req, res) => {
 
             // D. Upsert to DB using LibSQL Batch (Truly Atomic & Blocking)
             if (processedItems.length > 0) {
-                const queries = processedItems.map(item => ({
-                    sql: `INSERT OR REPLACE INTO items_v14 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping, brand, sold_quantity, promotion_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    args: [item.id, item.userId, item.title, item.thumbnail, item.price, item.currency_id, item.available_quantity, item.original_price, item.permalink, item.status, item.listing_type_id, item.sale_price_amount, item.sale_price_regular_amount, item.promotion_id, item.promotion_type, item.price_to_win, item.last_updated, item.free_shipping, item.brand, item.sold_quantity, item.promotion_name]
-                }));
+                const queries = processedItems.map(item => {
+                    const args = [
+                        item.id || null,
+                        item.userId || null,
+                        item.title || null,
+                        item.thumbnail || null,
+                        item.price || 0,
+                        item.currency_id || null,
+                        item.available_quantity || 0,
+                        item.original_price || null,
+                        item.permalink || null,
+                        item.status || null,
+                        item.listing_type_id || null,
+                        item.sale_price_amount || null,
+                        item.sale_price_regular_amount || null,
+                        item.promotion_id || null,
+                        item.promotion_type || null,
+                        item.price_to_win || 0,
+                        item.last_updated || null,
+                        item.free_shipping || 0,
+                        item.brand || '',
+                        item.sold_quantity || 0,
+                        item.promotion_name || null
+                    ].map(val => val === undefined ? null : val);
+
+                    return {
+                        sql: `INSERT OR REPLACE INTO items_v14 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping, brand, sold_quantity, promotion_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        args: args
+                    };
+                });
 
                 await client.batch(queries, "write");
                 processedCount += processedItems.length;
