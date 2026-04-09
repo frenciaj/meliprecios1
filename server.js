@@ -338,7 +338,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.6.0 - Reliable Sync Persistence - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.7.0 - Aplicacion masiva de Promociones - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -536,6 +536,15 @@ app.get('/listings', async (req, res) => {
         const statusFilter = req.query.status || 'all';
         const sortBy = req.query.sort || 'sales';
 
+        // Fetch campaigns for bulk promo bar
+        let campaigns = [];
+        try {
+            const campaignsRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/users/${userId}?app_version=v2`, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            campaigns = (campaignsRes.data.results || campaignsRes.data || []).filter(c => c.status === 'active');
+        } catch (e) { console.error('[Listings] Could not fetch campaigns:', e.message); }
+
         // Build SQL Query
         let sql = `SELECT * FROM items_v14 WHERE user_id = ? AND (title LIKE ? OR id LIKE ? OR brand LIKE ?)`;
         const params = [userId, search, search, search];
@@ -651,7 +660,10 @@ app.get('/listings', async (req, res) => {
                     const netIncomeColor = netIncome < 0 ? '#d32f2f' : '#00a650';
 
                     return `
-                        <tr>
+                        <tr data-item-id="${item.id}" data-item-price="${item.price}">
+                            <td style="text-align:center; width: 40px;">
+                                <input type="checkbox" class="item-checkbox" data-item-id="${item.id}" data-item-price="${item.price}" onchange="updateSelectionBar()" style="width:18px;height:18px;cursor:pointer;accent-color:#3483fa;">
+                            </td>
                             <td><img src="${item.thumbnail}" class="thumbnail"></td>
                             <td>
                                 <div style="font-weight: 500;">${item.title}</div>
@@ -780,6 +792,7 @@ app.get('/listings', async (req, res) => {
                             <table id="listings-table">
                                 <thead>
                                     <tr>
+                                        <th style="width:40px;text-align:center;"><input type="checkbox" id="select-all-cb" onchange="toggleSelectAll(this)" style="width:18px;height:18px;cursor:pointer;accent-color:#3483fa;"></th>
                                         <th>Imagen</th>
                                         <th>Nombre</th>
                                         <th>Precio (Base)</th>
@@ -802,7 +815,28 @@ app.get('/listings', async (req, res) => {
                                 ${page < totalPages ? `<a href="/listings?page=${page + 1}&limit=${limit}&q=${req.query.q || ''}&status=${statusFilter}" style="padding: 8px 16px; background: #eee; border-radius: 4px; text-decoration: none; color: #333;">Next &raquo;</a>` : ''}
                             </div>
                         `}
-                        
+
+                        <!-- Bulk Promo Floating Bar -->
+                        <div id="bulk-bar" style="display:none; position:fixed; bottom:0; left:0; right:0; background: linear-gradient(135deg,#1a1a2e,#16213e); color:white; padding:16px 30px; z-index:9999; box-shadow:0 -4px 20px rgba(0,0,0,0.3); animation: slideUp 0.3s ease;">
+                            <style>@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}</style>
+                            <div style="max-width:1200px; margin:0 auto; display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
+                                <div style="font-weight:600; font-size:1rem; margin-right:10px;">
+                                    🎯 <span id="bulk-count">0</span> productos seleccionados
+                                </div>
+                                <select id="bulk-campaign-select" style="flex:1; min-width:200px; padding:8px 12px; border-radius:6px; border:none; background:#2d3561; color:white; font-size:0.9rem; cursor:pointer;">
+                                    <option value="">-- Elegir Campaña --</option>
+                                    ${campaigns.map(c => `<option value="${c.id}" data-type="${c.promotion_type || c.type || 'SELLER_CAMPAIGN'}">${c.name || c.id}</option>`).join('')}
+                                </select>
+                                <div style="display:flex; align-items:center; gap:8px; background:#2d3561; padding:6px 12px; border-radius:6px;">
+                                    <label style="font-size:0.9rem; white-space:nowrap;">% Descuento:</label>
+                                    <input type="number" id="bulk-discount" min="1" max="99" placeholder="20" style="width:70px; padding:6px; border-radius:4px; border:none; text-align:center; font-size:1rem; font-weight:600;">
+                                    <span>%</span>
+                                </div>
+                                <button onclick="bulkApplyPromo()" style="background: linear-gradient(135deg,#00a650,#00c96a); color:white; border:none; padding:10px 24px; border-radius:6px; font-size:0.95rem; font-weight:700; cursor:pointer; white-space:nowrap; box-shadow:0 2px 8px rgba(0,165,80,0.4); transition:all 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">✅ Aplicar a todos</button>
+                                <button onclick="clearSelection()" style="background:transparent; color:#aaa; border:1px solid #555; padding:10px 16px; border-radius:6px; font-size:0.9rem; cursor:pointer;">✕ Cancelar</button>
+                            </div>
+                        </div>
+
                         <!-- Add Promo Modal -->
                         <div id="add-promo-modal" class="modal-overlay">
                             <div class="modal-box">
@@ -844,6 +878,85 @@ app.get('/listings', async (req, res) => {
 
 
                         <script>
+                            // ===== BULK SELECTION & PROMO =====
+                            function toggleSelectAll(masterCb) {
+                                document.querySelectorAll('.item-checkbox').forEach(cb => {
+                                    cb.checked = masterCb.checked;
+                                });
+                                updateSelectionBar();
+                            }
+
+                            function updateSelectionBar() {
+                                const checked = document.querySelectorAll('.item-checkbox:checked');
+                                const bar = document.getElementById('bulk-bar');
+                                const countEl = document.getElementById('bulk-count');
+                                if (checked.length > 0) {
+                                    bar.style.display = 'block';
+                                    countEl.textContent = checked.length;
+                                } else {
+                                    bar.style.display = 'none';
+                                }
+                            }
+
+                            function clearSelection() {
+                                document.querySelectorAll('.item-checkbox').forEach(cb => cb.checked = false);
+                                const masterCb = document.getElementById('select-all-cb');
+                                if (masterCb) masterCb.checked = false;
+                                updateSelectionBar();
+                            }
+
+                            async function bulkApplyPromo() {
+                                const campaignSelect = document.getElementById('bulk-campaign-select');
+                                const discountInput = document.getElementById('bulk-discount');
+                                const selectedOption = campaignSelect.options[campaignSelect.selectedIndex];
+
+                                const promotionId = campaignSelect.value;
+                                const promotionType = selectedOption?.dataset?.type || 'SELLER_CAMPAIGN';
+                                const discountPercent = parseFloat(discountInput.value);
+
+                                if (!promotionId) return alert('⚠️ Por favor elige una campaña.');
+                                if (!discountPercent || discountPercent <= 0 || discountPercent >= 100) return alert('⚠️ Ingresá un porcentaje válido (1–99).');
+
+                                const checkedBoxes = document.querySelectorAll('.item-checkbox:checked');
+                                if (checkedBoxes.length === 0) return alert('⚠️ No hay productos seleccionados.');
+
+                                const items = Array.from(checkedBoxes).map(cb => ({
+                                    item_id: cb.dataset.itemId,
+                                    base_price: parseFloat(cb.dataset.itemPrice)
+                                }));
+
+                                if (!confirm('¿Aplicar ' + discountPercent + '% de descuento en ' + items.length + ' productos?')) return;
+
+                                const applyBtn = document.querySelector('#bulk-bar button');
+                                const originalText = applyBtn.innerHTML;
+                                applyBtn.disabled = true;
+                                applyBtn.innerHTML = '⏳ Aplicando...';
+
+                                try {
+                                    const res = await fetch('/bulk-apply-promotion', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ items, promotion_id: promotionId, promotion_type: promotionType, discount_percent: discountPercent })
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                        const msg = '✅ Listo!\n' +
+                                            '• Aplicado: ' + data.applied + ' productos\n' +
+                                            (data.failed > 0 ? '• Fallaron: ' + data.failed + ' productos' : '');
+                                        alert(msg);
+                                        clearSelection();
+                                        location.reload();
+                                    } else {
+                                        alert('Error: ' + (data.error || 'Desconocido'));
+                                    }
+                                } catch(e) {
+                                    alert('Error de red: ' + e.message);
+                                } finally {
+                                    applyBtn.disabled = false;
+                                    applyBtn.innerHTML = originalText;
+                                }
+                            }
+
                             async function syncListings() {
                                 const btn = document.getElementById('sync-btn');
                                 const originalText = btn.innerHTML;
@@ -2421,6 +2534,78 @@ app.post('/sync-listings', async (req, res) => {
         });
     }
 });
+
+// POST /bulk-apply-promotion - Apply same discount to multiple selected items
+app.post('/bulk-apply-promotion', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+    if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const { items, promotion_id, promotion_type, discount_percent } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ success: false, error: 'No items provided' });
+    }
+    if (!promotion_id || !discount_percent) {
+        return res.status(400).json({ success: false, error: 'Missing promotion_id or discount_percent' });
+    }
+
+    console.log(`[Bulk Promo] Starting bulk apply: ${items.length} items, campaign ${promotion_id}, ${discount_percent}% discount`);
+
+    let applied = 0;
+    let failed = 0;
+    const errors = [];
+
+    // Process in chunks of 5 to avoid rate limiting
+    const chunkSize = 5;
+    for (let i = 0; i < items.length; i += chunkSize) {
+        const chunk = items.slice(i, i + chunkSize);
+
+        await Promise.all(chunk.map(async ({ item_id, base_price }) => {
+            try {
+                const dealPrice = Math.round(base_price * (1 - discount_percent / 100));
+
+                // Check item's current promo status to decide POST vs PUT
+                let promoStatus = null;
+                let authoritativeType = promotion_type;
+                try {
+                    const infoRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`, {
+                        headers: { Authorization: `Bearer ${accessToken}` }
+                    });
+                    const promos = infoRes.data || [];
+                    const match = promos.find(p => p.id === promotion_id);
+                    if (match) {
+                        promoStatus = match.status;
+                        authoritativeType = match.type || authoritativeType;
+                    }
+                } catch (e) { /* Silently continue with provided type */ }
+
+                const method = promoStatus === 'started' ? 'put' : 'post';
+                await axios[method](
+                    `https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`,
+                    { promotion_id, promotion_type: authoritativeType, deal_price: dealPrice },
+                    { headers: { Authorization: `Bearer ${accessToken}` } }
+                );
+
+                console.log(`[Bulk Promo] Applied to ${item_id}: ${base_price} -> ${dealPrice}`);
+                applied++;
+            } catch (e) {
+                const errMsg = e.response?.data?.message || e.message;
+                console.error(`[Bulk Promo] Failed for ${item_id}:`, errMsg);
+                errors.push({ item_id, error: errMsg });
+                failed++;
+            }
+        }));
+
+        // Small delay between chunks to be nice to the API
+        if (i + chunkSize < items.length) {
+            await new Promise(r => setTimeout(r, 200));
+        }
+    }
+
+    console.log(`[Bulk Promo] Finished. Applied: ${applied}, Failed: ${failed}`);
+    res.json({ success: true, applied, failed, errors });
+});
+
 
 app.get('/debug-suggestions/:id', async (req, res) => {
     const accessToken = req.cookies.access_token;
