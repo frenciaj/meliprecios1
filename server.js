@@ -545,6 +545,14 @@ app.get('/listings', async (req, res) => {
             campaigns = (campaignsRes.data.results || campaignsRes.data || []).filter(c => c.status === 'active');
         } catch (e) { console.error('[Listings] Could not fetch campaigns:', e.message); }
 
+        // Pre-build campaign options HTML to avoid nested template literal issues
+        let campaignsOptionsHtml = '<option value="">-- Elegir Campa\u00f1a --</option>';
+        campaigns.forEach(c => {
+            const name = String(c.name || c.id).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            const pType = String(c.promotion_type || c.type || 'SELLER_CAMPAIGN');
+            campaignsOptionsHtml += '<option value="' + c.id + '" data-type="' + pType + '">' + name + '</option>';
+        });
+
         // Build SQL Query
         let sql = `SELECT * FROM items_v14 WHERE user_id = ? AND (title LIKE ? OR id LIKE ? OR brand LIKE ?)`;
         const params = [userId, search, search, search];
@@ -824,8 +832,7 @@ app.get('/listings', async (req, res) => {
                                     🎯 <span id="bulk-count">0</span> productos seleccionados
                                 </div>
                                 <select id="bulk-campaign-select" style="flex:1; min-width:200px; padding:8px 12px; border-radius:6px; border:none; background:#2d3561; color:white; font-size:0.9rem; cursor:pointer;">
-                                    <option value="">-- Elegir Campaña --</option>
-                                    ${campaigns.map(c => `<option value="${c.id}" data-type="${c.promotion_type || c.type || 'SELLER_CAMPAIGN'}">${c.name || c.id}</option>`).join('')}
+                                    ${campaignsOptionsHtml}
                                 </select>
                                 <div style="display:flex; align-items:center; gap:8px; background:#2d3561; padding:6px 12px; border-radius:6px;">
                                     <label style="font-size:0.9rem; white-space:nowrap;">% Descuento:</label>
