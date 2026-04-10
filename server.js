@@ -337,7 +337,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem; padding-bottom: 20px;">
-        <div>Creado por Tatan v14.8.1. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
+        <div>Creado por Tatan v14.8.2. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
     </footer>
 </body>
 </html>
