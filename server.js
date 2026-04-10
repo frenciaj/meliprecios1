@@ -336,9 +336,8 @@ const renderPage = (title, content, activeTab = 'listings') => `
     <div class="container">
         ${content}
     </div>
-    <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
-        <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.7.2 - Fast Sync (no timeout) - ${new Date().toISOString()}</div>
+    <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem; padding-bottom: 20px;">
+        <div>Creado por Tatan v14.7.3. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
     </footer>
 </body>
 </html>
