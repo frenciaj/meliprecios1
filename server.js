@@ -487,14 +487,9 @@ app.post('/apply-promotion', async (req, res) => {
 
         const payload = {
             promotion_id,
-            promotion_type
+            promotion_type,
+            deal_price: parseFloat(deal_price)
         };
-
-        if (promotion_type === 'DEAL' || promotion_type === 'LIGHTNING') {
-            payload.deal_price = parseFloat(deal_price);
-        } else {
-            payload.price = parseFloat(deal_price);
-        }
 
         const apiRes = await axios.post(url, payload, {
             headers: { Authorization: `Bearer ${accessToken}` }
@@ -1834,7 +1829,18 @@ app.post('/bulk-apply-promotion', async (req, res) => {
 
         await Promise.all(chunk.map(async ({ item_id, base_price }) => {
             try {
-                const dealPrice = Math.round(base_price * (1 - discount_percent / 100));
+                // Fetch true base price from ML instead of relying on frontend value
+                let trueBasePrice = base_price;
+                try {
+                    const itemApiRes = await axios.get(`https://api.mercadolibre.com/items/${item_id}`, {
+                        headers: { Authorization: `Bearer ${accessToken}` }
+                    });
+                    trueBasePrice = itemApiRes.data.original_price || itemApiRes.data.price || base_price;
+                } catch (e) {
+                    // Fallback to frontend base_price if extra fetch fails
+                }
+
+                const dealPrice = Math.round(trueBasePrice * (1 - discount_percent / 100));
 
                 // Check item's current promo status to decide POST vs PUT
                 let promoStatus = null;
@@ -1854,13 +1860,9 @@ app.post('/bulk-apply-promotion', async (req, res) => {
                 const method = promoStatus === 'started' ? 'put' : 'post';
                 const payload = {
                     promotion_id,
-                    promotion_type: authoritativeType
+                    promotion_type: authoritativeType,
+                    deal_price: dealPrice
                 };
-                if (authoritativeType === 'DEAL' || authoritativeType === 'LIGHTNING') {
-                    payload.deal_price = dealPrice;
-                } else {
-                    payload.price = dealPrice;
-                }
 
                 await axios[method](
                     `https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`,
