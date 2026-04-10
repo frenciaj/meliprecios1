@@ -1,3 +1,49 @@
+
+// --- TOAST NOTIFICATIONS ---
+function showToast(message, type = 'info') {
+    let tContainer = document.getElementById('toast-container');
+    if (!tContainer) {
+        tContainer = document.createElement('div');
+        tContainer.id = 'toast-container';
+        tContainer.style.position = 'fixed';
+        tContainer.style.top = '20px';
+        tContainer.style.right = '20px';
+        tContainer.style.zIndex = '100000';
+        tContainer.style.display = 'flex';
+        tContainer.style.flexDirection = 'column';
+        tContainer.style.gap = '10px';
+        document.body.appendChild(tContainer);
+    }
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.background = message.includes('Error') || message.includes('⚠️') ? '#d32f2f' : '#00a650';
+    toast.style.color = 'white';
+    toast.style.padding = '12px 24px';
+    toast.style.borderRadius = '8px';
+    toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+    toast.style.fontWeight = '600';
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-20px)';
+    toast.style.transition = 'all 0.3s ease';
+    tContainer.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; }, 10);
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateY(-20px)'; setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
+function showConfirm(message) {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed'; overlay.style.top = '0'; overlay.style.left = '0'; overlay.style.width = '100%'; overlay.style.height = '100%'; overlay.style.background = 'rgba(0,0,0,0.5)'; overlay.style.zIndex = '100000'; overlay.style.display = 'flex'; overlay.style.alignItems = 'center'; overlay.style.justifyContent = 'center';
+        const box = document.createElement('div');
+        box.style.background = 'white'; box.style.padding = '30px'; box.style.borderRadius = '12px'; box.style.maxWidth = '400px'; box.style.textAlign = 'center';
+        box.innerHTML = '<div style="font-size:1.1rem;font-weight:600;margin-bottom:20px;">' + message + '</div>';
+        const btnContainer = document.createElement('div'); btnContainer.style.display = 'flex'; btnContainer.style.gap = '10px'; btnContainer.style.justifyContent = 'center';
+        const btnYes = document.createElement('button'); btnYes.textContent = 'Aceptar'; btnYes.style.background = '#3483fa'; btnYes.style.color = 'white'; btnYes.style.padding = '10px 24px'; btnYes.style.borderRadius = '6px'; btnYes.style.border = 'none'; btnYes.style.cursor = 'pointer'; btnYes.onclick = () => { overlay.remove(); resolve(true); };
+        const btnNo = document.createElement('button'); btnNo.textContent = 'Cancelar'; btnNo.style.background = '#eee'; btnNo.style.color = '#333'; btnNo.style.padding = '10px 24px'; btnNo.style.borderRadius = '6px'; btnNo.style.border = 'none'; btnNo.style.cursor = 'pointer'; btnNo.onclick = () => { overlay.remove(); resolve(false); };
+        btnContainer.append(btnNo, btnYes); box.appendChild(btnContainer); overlay.appendChild(box); document.body.appendChild(overlay);
+    });
+}
+
 // ===== BULK SELECTION & PROMO =====
                             function toggleSelectAll(masterCb) {
                                 document.querySelectorAll('.item-checkbox').forEach(cb => {
@@ -34,18 +80,18 @@
                                 const promotionType = selectedOption?.dataset?.type || 'SELLER_CAMPAIGN';
                                 const discountPercent = parseFloat(discountInput.value);
 
-                                if (!promotionId) return alert('⚠️ Por favor elige una campaña.');
-                                if (!discountPercent || discountPercent <= 0 || discountPercent >= 100) return alert('⚠️ Ingresá un porcentaje válido (1–99).');
+                                if (!promotionId) return showToast('⚠️ Por favor elige una campaña.');
+                                if (!discountPercent || discountPercent <= 0 || discountPercent >= 100) return showToast('⚠️ Ingresá un porcentaje válido (1–99).');
 
                                 const checkedBoxes = document.querySelectorAll('.item-checkbox:checked');
-                                if (checkedBoxes.length === 0) return alert('⚠️ No hay productos seleccionados.');
+                                if (checkedBoxes.length === 0) return showToast('⚠️ No hay productos seleccionados.');
 
                                 const items = Array.from(checkedBoxes).map(cb => ({
                                     item_id: cb.dataset.itemId,
                                     base_price: parseFloat(cb.dataset.itemPrice)
                                 }));
 
-                                if (!confirm('¿Aplicar ' + discountPercent + '% de descuento en ' + items.length + ' productos?')) return;
+                                if (!await showConfirm('¿Aplicar ' + discountPercent + '% de descuento en ' + items.length + ' productos?')) return;
 
                                 const applyBtn = document.querySelector('#bulk-bar button');
                                 const originalText = applyBtn.innerHTML;
@@ -63,14 +109,14 @@
                                         const msg = '✅ Listo!\n' +
                                             '• Aplicado: ' + data.applied + ' productos\n' +
                                             (data.failed > 0 ? '• Fallaron: ' + data.failed + ' productos' : '');
-                                        alert(msg);
+                                        showToast(msg);
                                         clearSelection();
                                         location.reload();
                                     } else {
-                                        alert('Error: ' + (data.error || 'Desconocido'));
+                                        showToast('Error: ' + (data.error || 'Desconocido'));
                                     }
                                 } catch(e) {
-                                    alert('Error de red: ' + e.message);
+                                    showToast('Error de red: ' + e.message);
                                 } finally {
                                     applyBtn.disabled = false;
                                     applyBtn.innerHTML = originalText;
@@ -89,13 +135,12 @@
                                     const res = await fetch('/sync-listings', { method: 'POST' });
                                     const data = await res.json();
                                     if (data.success) {
-                                        alert('Sync Complete! Processed ' + data.count + ' items.');
-                                        location.reload();
+                                        showToast('Sync Complete! Processed ' + data.count + ' items.'); setTimeout(() => location.reload(), 2000);
                                     } else {
-                                        alert('Sync Error: ' + data.error);
+                                        showToast('Sync Error: ' + data.error);
                                     }
                                 } catch (e) {
-                                    alert('Sync Failed: ' + e.message);
+                                    showToast('Sync Failed: ' + e.message);
                                 } finally {
                                     btn.innerHTML = originalText;
                                     btn.disabled = false;
@@ -159,14 +204,14 @@
                                         // Dynamic Net Income Update
                                         updateNetIncome(itemId, parseFloat(newPrice));
                                     } else {
-                                        alert('Error updating price: ' + data.error);
+                                        showToast('Error updating price: ' + data.error);
                                         btn.innerHTML = '✓';
                                     }
                                 } catch (e) {
                                     if (e.name === 'AbortError') {
-                                        alert('Error: Request timed out.');
+                                        showToast('Error: Request timed out.');
                                     } else {
-                                        alert('Error: ' + e.message);
+                                        showToast('Error: ' + e.message);
                                     }
                                     btn.innerHTML = '✓';
                                 } finally {
@@ -205,12 +250,12 @@
                                     if (data.success) {
                                         location.reload();
                                     } else {
-                                        alert('Error updating quantity: ' + data.error);
+                                        showToast('Error updating quantity: ' + data.error);
                                         btn.disabled = false;
                                         btn.innerHTML = '✓';
                                     }
                                 } catch (e) {
-                                    alert('Error: ' + e.message);
+                                    showToast('Error: ' + e.message);
                                     btn.disabled = false;
                                     btn.innerHTML = '✓';
                                 }
@@ -237,7 +282,7 @@
                                 const newPrice = parseFloat(input.value);
 
                                 if (!promoId || !promoType) {
-                                    alert('Error: Missing promotion data');
+                                    showToast('Error: Missing promotion data');
                                     return;
                                 }
 
@@ -302,12 +347,12 @@
                                             errorMsg = await res.text(); // Fallback to raw text
                                         }
 
-                                        alert('Error updating promo: ' + errorMsg);
+                                        showToast('Error updating promo: ' + errorMsg);
                                         btn.disabled = false;
                                         btn.innerHTML = '✓';
                                     }
                                 } catch (e) {
-                                    alert('Error: ' + e.message);
+                                    showToast('Error: ' + e.message);
                                     btn.disabled = false;
                                     btn.innerHTML = '✓';
                                 }
@@ -520,12 +565,12 @@
                                 const dealPrice = parseFloat(priceInput.value);
 
                                 if (!promoId || !promoType) {
-                                    alert('Por favor selecciona una promoción');
+                                    showToast('Por favor selecciona una promoción');
                                     return;
                                 }
 
                                 if (document.getElementById('promo-config-section').style.display !== 'none' && !dealPrice) {
-                                    alert('Por favor ingresa un precio para la oferta.');
+                                    showToast('Por favor ingresa un precio para la oferta.');
                                     priceInput.focus();
                                     return;
                                 }
@@ -635,18 +680,18 @@
                                             }
                                         }
 
-                                        alert('¡Éxito! Oferta aplicada correctamente.');
+                                        showToast('¡Éxito! Oferta aplicada correctamente.');
                                         closeAddPromoModal();
                                         
                                         // Dynamic Net Income Update
                                         updateNetIncome(itemId, dealPrice);
                                     } else {
                                         const errMsg = data.details?.message || data.error || 'Error desconocido';
-                                        alert('Error al unirse: ' + errMsg);
+                                        showToast('Error al unirse: ' + errMsg);
                                         console.error(data);
                                     }
                                 } catch (e) {
-                                    alert('Error de red: ' + e.message);
+                                    showToast('Error de red: ' + e.message);
                                 } finally {
                                     btn.disabled = false;
                                     btn.textContent = 'Unirse';
