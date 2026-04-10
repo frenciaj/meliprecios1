@@ -487,9 +487,14 @@ app.post('/apply-promotion', async (req, res) => {
 
         const payload = {
             promotion_id,
-            promotion_type,
-            deal_price: parseFloat(deal_price)
+            promotion_type
         };
+
+        if (promotion_type === 'DEAL' || promotion_type === 'LIGHTNING') {
+            payload.deal_price = parseFloat(deal_price);
+        } else {
+            payload.price = parseFloat(deal_price);
+        }
 
         const apiRes = await axios.post(url, payload, {
             headers: { Authorization: `Bearer ${accessToken}` }
@@ -1847,9 +1852,19 @@ app.post('/bulk-apply-promotion', async (req, res) => {
                 } catch (e) { /* Silently continue with provided type */ }
 
                 const method = promoStatus === 'started' ? 'put' : 'post';
+                const payload = {
+                    promotion_id,
+                    promotion_type: authoritativeType
+                };
+                if (authoritativeType === 'DEAL' || authoritativeType === 'LIGHTNING') {
+                    payload.deal_price = dealPrice;
+                } else {
+                    payload.price = dealPrice;
+                }
+
                 await axios[method](
                     `https://api.mercadolibre.com/seller-promotions/items/${item_id}?app_version=v2`,
-                    { promotion_id, promotion_type: authoritativeType, deal_price: dealPrice },
+                    payload,
                     { headers: { Authorization: `Bearer ${accessToken}` } }
                 );
 
