@@ -338,7 +338,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem;">
         <div>Creado por Tatan. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
-        <div style="margin-top: 5px;">v14.7.1 - Fix template literal crash - ${new Date().toISOString()}</div>
+        <div style="margin-top: 5px;">v14.7.2 - Fast Sync (no timeout) - ${new Date().toISOString()}</div>
     </footer>
 </body>
 </html>
@@ -2429,100 +2429,56 @@ app.post('/sync-listings', async (req, res) => {
                 headers: { Authorization: `Bearer ${accessToken}` }
             });
 
-            const processedItems = (await Promise.all(itemsRes.data.map(async (r) => {
-                if (!r.body || r.code !== 200) return null;
-                const item = r.body;
-
-                // B. Fetch Sale Price AND Promotion Data (Parallel)
-                let salePrice = null;
-                let saleOriginal = null;
-                let promoId = null;
-                let promoType = null;
-                let promoName = null;
-
-                try {
-                    const promoRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${item.id}?app_version=v2`, {
-                        headers: { Authorization: `Bearer ${accessToken}` }
-                    }).catch(() => ({ data: [] }));
-
-                    const activePromo = promoRes.data?.find(p => p.status === 'started');
-                    if (activePromo) {
-                        promoId = activePromo.id;
-                        promoType = activePromo.type;
-                        promoName = activePromo.name || activePromo.campaign_name || null;
-                        salePrice = activePromo.price;
-                        saleOriginal = activePromo.original_price;
-                    } else {
-                        const spRes = await axios.get(`https://api.mercadolibre.com/items/${item.id}/sale_price`, {
-                            headers: { Authorization: `Bearer ${accessToken}` }
-                        }).catch(() => ({ data: {} }));
-                        if (spRes.data?.amount) {
-                            salePrice = spRes.data.amount;
-                            saleOriginal = spRes.data.regular_amount;
-                            promoId = spRes.data.metadata?.promotion_id;
-                            promoType = spRes.data.metadata?.promotion_type;
-                            promoName = spRes.data.metadata?.name || spRes.data.metadata?.campaign_name || null;
-                        }
-                    }
-                } catch (e) { }
-
-                return {
-                    id: item.id,
-                    userId,
-                    title: item.title,
-                    thumbnail: item.thumbnail,
-                    price: item.price,
-                    currency_id: item.currency_id,
-                    available_quantity: item.available_quantity,
-                    original_price: item.original_price,
-                    permalink: item.permalink,
-                    status: item.status,
-                    listing_type_id: item.listing_type_id,
-                    sale_price_amount: salePrice,
-                    sale_price_regular_amount: saleOriginal,
-                    promotion_id: promoId,
-                    promotion_type: promoType,
-                    promotion_name: promoName,
-                    price_to_win: 0,
-                    last_updated: new Date().toISOString(),
-                    free_shipping: item.shipping?.free_shipping ? 1 : 0,
-                    brand: item.attributes?.find(a => a.id === 'BRAND')?.value_name || '',
-                    sold_quantity: item.sold_quantity || 0
-                };
-            }))).filter(i => i !== null);
-
-            // D. Upsert to DB using LibSQL Batch (Truly Atomic & Blocking)
-            if (processedItems.length > 0) {
-                const queries = processedItems.map(item => {
-                    const args = [
-                        item.id || null,
-                        item.userId || null,
-                        item.title || null,
-                        item.thumbnail || null,
-                        item.price || 0,
-                        item.currency_id || null,
-                        item.available_quantity || 0,
-                        item.original_price || null,
-                        item.permalink || null,
-                        item.status || null,
-                        item.listing_type_id || null,
-                        item.sale_price_amount || null,
-                        item.sale_price_regular_amount || null,
-                        item.promotion_id || null,
-                        item.promotion_type || null,
-                        item.price_to_win || 0,
-                        item.last_updated || null,
-                        item.free_shipping || 0,
-                        item.brand || '',
-                        item.sold_quantity || 0,
-                        item.promotion_name || null
-                    ].map(val => val === undefined ? null : val);
-
+            const processedItems = itemsRes.data
+                .filter(r => r.body && r.code === 200)
+                .map(r => {
+                    const item = r.body;
                     return {
-                        sql: `INSERT OR REPLACE INTO items_v14 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, sale_price_amount, sale_price_regular_amount, promotion_id, promotion_type, price_to_win, last_updated, free_shipping, brand, sold_quantity, promotion_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                        args: args
+                        id: item.id || null,
+                        userId: userId || null,
+                        title: item.title || null,
+                        thumbnail: item.thumbnail || null,
+                        price: item.price || 0,
+                        currency_id: item.currency_id || null,
+                        available_quantity: item.available_quantity || 0,
+                        original_price: item.original_price || null,
+                        permalink: item.permalink || null,
+                        status: item.status || null,
+                        listing_type_id: item.listing_type_id || null,
+                        last_updated: new Date().toISOString(),
+                        free_shipping: item.shipping?.free_shipping ? 1 : 0,
+                        brand: item.attributes?.find(a => a.id === 'BRAND')?.value_name || '',
+                        sold_quantity: item.sold_quantity || 0
                     };
                 });
+
+
+            // D. Upsert to DB using LibSQL Batch — only update basic item fields, preserve promo data
+            if (processedItems.length > 0) {
+                const queries = processedItems.map(item => ({
+                    sql: `INSERT INTO items_v14 (id, user_id, title, thumbnail, price, currency_id, available_quantity, original_price, permalink, status, listing_type_id, last_updated, free_shipping, brand, sold_quantity)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          ON CONFLICT(id, user_id) DO UPDATE SET
+                            title = excluded.title,
+                            thumbnail = excluded.thumbnail,
+                            price = excluded.price,
+                            currency_id = excluded.currency_id,
+                            available_quantity = excluded.available_quantity,
+                            original_price = excluded.original_price,
+                            permalink = excluded.permalink,
+                            status = excluded.status,
+                            listing_type_id = excluded.listing_type_id,
+                            last_updated = excluded.last_updated,
+                            free_shipping = excluded.free_shipping,
+                            brand = excluded.brand,
+                            sold_quantity = excluded.sold_quantity`,
+                    args: [
+                        item.id, item.userId, item.title, item.thumbnail, item.price,
+                        item.currency_id, item.available_quantity, item.original_price,
+                        item.permalink, item.status, item.listing_type_id,
+                        item.last_updated, item.free_shipping, item.brand, item.sold_quantity
+                    ]
+                }));
 
                 await client.batch(queries, "write");
                 processedCount += processedItems.length;
