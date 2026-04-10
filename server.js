@@ -542,8 +542,18 @@ app.get('/listings', async (req, res) => {
             const campaignsRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/users/${userId}?app_version=v2`, {
                 headers: { Authorization: `Bearer ${accessToken}` }
             });
-            campaigns = (campaignsRes.data.results || campaignsRes.data || []).filter(c => c.status === 'active');
-        } catch (e) { console.error('[Listings] Could not fetch campaigns:', e.message); }
+            let parsedCampaigns = [];
+            if (Array.isArray(campaignsRes.data)) {
+                parsedCampaigns = campaignsRes.data;
+            } else if (campaignsRes.data?.results) {
+                parsedCampaigns = campaignsRes.data.results;
+            } else if (campaignsRes.data?.promotions) {
+                parsedCampaigns = campaignsRes.data.promotions;
+            }
+            campaigns = parsedCampaigns.filter(c => c.status === 'active');
+        } catch (e) {
+            console.error('[Listings] Could not fetch campaigns:', e.message);
+        }
 
         // Pre-build campaign options HTML to avoid nested template literal issues
         let campaignsOptionsHtml = '<option value="">-- Elegir Campa\u00f1a --</option>';
