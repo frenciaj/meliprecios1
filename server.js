@@ -549,7 +549,10 @@ app.get('/listings', async (req, res) => {
             } else if (campaignsRes.data?.promotions) {
                 parsedCampaigns = campaignsRes.data.promotions;
             }
-            campaigns = parsedCampaigns.filter(c => c.status === 'active');
+
+            // Allow 'active' or 'started' campaigns, or simply ensure they haven't finished yet
+            const now = new Date();
+            campaigns = parsedCampaigns.filter(c => c.status === 'active' || c.status === 'started' || new Date(c.finish_date) > now);
         } catch (e) {
             console.error('[Listings] Could not fetch campaigns:', e.message);
         }
