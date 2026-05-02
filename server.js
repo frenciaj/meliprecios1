@@ -337,7 +337,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem; padding-bottom: 20px;">
-        <div>Creado por Tatan v14.9.0. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
+        <div>Creado por Tatan v15.0.0. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
     </footer>
 </body>
 </html>
@@ -469,6 +469,45 @@ app.get('/debug-promo/:id', async (req, res) => {
         res.status(500).json({ error: error.message, details: error.response?.data });
     }
 });
+
+// Return all active promotions for a single item (used by the listings table UI)
+app.get('/api/item-promos/:id', async (req, res) => {
+    const accessToken = req.cookies.access_token;
+    if (!accessToken) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const { id } = req.params;
+        const promoRes = await axios.get(`https://api.mercadolibre.com/seller-promotions/items/${id}?app_version=v2`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        // Filter to only active / started promos and add a computed discount %
+        const allPromos = Array.isArray(promoRes.data) ? promoRes.data : [];
+        const activePromos = allPromos
+            .filter(p => p.status === 'started' || p.status === 'active' || p.status === 'candidate')
+            .map(p => {
+                let discountPct = null;
+                if (p.original_price && p.price && p.original_price > p.price) {
+                    discountPct = Math.round((1 - p.price / p.original_price) * 100);
+                }
+                return {
+                    id: p.id,
+                    name: p.name || p.id,
+                    status: p.status,
+                    type: p.type,
+                    price: p.price,
+                    original_price: p.original_price,
+                    discount_pct: discountPct
+                };
+            });
+
+        res.json({ success: true, promos: activePromos });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 
 app.post('/apply-promotion', async (req, res) => {
     const accessToken = req.cookies.access_token;
@@ -704,30 +743,11 @@ app.get('/listings', async (req, res) => {
                                     </div>
                                 </div>
                             </td>
-                            <td style="text-align: center;">
-                                ${hasPromo ? `
-                                    <div class="promo-edit-container" data-item-id="${item.id}" data-promo-id="${item.promotion_id || ''}" data-promo-type="${item.promotion_type || ''}">
-                                        <div class="promo-display">
-                                            <div style="display: flex; align-items: center; gap: 5px;">
-                                                <div style="color: #00a650; font-weight: 700; font-size: 1.1rem;">$ <span class="promo-value-text">${currentPrice.toLocaleString('es-AR')}</span></div>
-                                                <button class="add-promo-btn" onclick="openAddPromoModal('${item.id}', ${item.price})" title="Agregar Promoción" style="border: none; background: #e6f7ee; color: #00a650; font-weight: bold; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px;">+</button>
-                                            </div>
-                                            <div style="font-size: 0.7rem; color: #666; background: #e6f7ee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">En Promoción</div>
-                                            <button class="edit-price-btn" onclick="editPromoPrice('${item.id}', ${currentPrice})" style="margin-left: 5px;">✏️</button>
-                                            ${item.promotion_name ? `<div style="font-size: 0.75rem; color: #4da6ff; margin-top: 6px; line-height: 1.2; max-width: 180px; margin-left: auto; margin-right: auto;">${item.promotion_name}</div>` : ''}
-                                        </div>
-                                        <div class="promo-edit-form" style="display: none; align-items: center; justify-content: center; gap: 5px; margin-top: 5px;">
-                                            <input type="number" class="promo-input" value="${currentPrice}" step="0.01" style="width: 80px; padding: 4px;" onkeydown="if(event.key==='Enter') savePromoPrice('${item.id}')" />
-                                            <button class="save-price-btn" onclick="savePromoPrice('${item.id}')">✓</button>
-                                            <button class="cancel-price-btn" onclick="cancelPromoEdit('${item.id}')">✗</button>
-                                        </div>
-                                    </div>
-                                ` : `
-                                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;">
-
-                                        <button class="add-promo-btn" onclick="openAddPromoModal('${item.id}', ${item.price})" title="Agregar Promoción" style="border: none; background: #e6f7ee; color: #00a650; font-weight: bold; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px;">+</button>
-                                    </div>
-                                `}
+                            <td style="text-align: center;" class="promo-cell" data-item-id="${item.id}" data-item-price="${item.price}">
+                                <div class="promo-cell-inner" id="promos-${item.id}">
+                                    <span style="color:#ccc;font-size:0.75rem;">⏳</span>
+                                </div>
+                                <button class="add-promo-btn" onclick="openAddPromoModal('${item.id}', ${item.price})" title="Agregar Promoción" style="border: none; background: #e6f7ee; color: #00a650; font-weight: bold; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; margin-top: 4px;">+</button>
                             </td>
                             <td class="net-income-cell" id="net-income-${item.id}" data-ship-fee="${shipFee}" data-sale-fee="${saleFee}" data-current-price="${currentPrice}">
                                 <span class="net-income-value">${netIncomeFormatted}</span>
