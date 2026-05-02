@@ -255,12 +255,12 @@ async function executeRemoval(promoId, promoType, accessToken, taskId) {
 
         console.log(`[Job ${taskId}] Finished. Removed: ${removedCount}, Errors: ${errorCount}`);
 
-        // Mark as completed
-        db.run('UPDATE scheduled_tasks SET status = "completed" WHERE id = ?', [taskId]);
+        // Mark as completed in Turso
+        await client.execute({ sql: 'UPDATE scheduled_tasks SET status = ? WHERE id = ?', args: ['completed', taskId] });
 
     } catch (error) {
         console.error(`[Job ${taskId}] Error executing:`, error.message);
-        db.run('UPDATE scheduled_tasks SET status = "failed" WHERE id = ?', [taskId]);
+        await client.execute({ sql: 'UPDATE scheduled_tasks SET status = ? WHERE id = ?', args: ['failed', taskId] });
     }
 }
 
@@ -337,7 +337,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem; padding-bottom: 20px;">
-        <div>Creado por Tatan v14.8.2. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
+        <div>Creado por Tatan v14.9.0. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
     </footer>
 </body>
 </html>
@@ -2312,82 +2312,76 @@ app.post('/remove-all-promotion-items', async (req, res) => {
 });
 
 // Schedule Removal
-app.post('/schedule-remove-items', (req, res) => {
+app.post('/schedule-remove-items', async (req, res) => {
     const accessToken = req.cookies.access_token;
     if (!accessToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
     const { promotion_id, promotion_type, execute_at, promotion_name } = req.body;
     const pType = promotion_type || 'SELLER_CAMPAIGN';
 
-    // Get user ID (needed for DB record)
-    // Quick hack: decode JWT or just store blindly? We'll rely on memory token.
-    // Ideally we fetch /users/me but for speed lets assume valid.
-
-    const stmt = db.prepare('INSERT INTO scheduled_tasks (promotion_id, promotion_type, execute_at, status, access_token) VALUES (?, ?, ?, ?, ?)');
-    stmt.run(promotion_id, promotion_type, execute_at, 'pending', accessToken, function (err) {
-        if (err) {
-            console.error('Schedule Error:', err);
-            return res.status(500).json({ success: false, error: err.message });
-        }
-
-        const taskId = this.lastID;
-        // Also schedule in-memory for immediate servers
-        scheduleRemovalJob(taskId, promotion_id, promotion_type, execute_at, accessToken);
-
+    try {
+        // Save to Turso (persistent across deployments)
+        const result = await client.execute({
+            sql: 'INSERT INTO scheduled_tasks (promotion_id, promotion_type, execute_at, status, access_token) VALUES (?, ?, ?, ?, ?)',
+            args: [promotion_id, pType, execute_at, 'pending', accessToken]
+        });
+        const taskId = result.lastInsertRowid;
+        scheduleRemovalJob(taskId, promotion_id, pType, execute_at, accessToken);
+        console.log(`[Schedule] Task ${taskId} saved to Turso for promo ${promotion_id} at ${execute_at}`);
         res.json({ success: true, task_id: taskId, message: 'Tarea programada exitosamente.' });
-    });
-    stmt.finalize();
+    } catch (err) {
+        console.error('Schedule Error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // Vercel Cron Endpoint
-app.get('/api/cron/process-queue', (req, res) => {
+app.get('/api/cron/process-queue', async (req, res) => {
     console.log('[Cron] Checking for pending tasks...');
-    const now = new Date().toISOString();
 
-    // Debug: Get ALL tasks and Current Time
-    db.all(`SELECT *, datetime('now') as server_utc_now FROM scheduled_tasks`, [], async (err, allRows) => {
-        if (err) {
-            console.error('[Cron] DB Error:', err);
-            return res.status(500).json({ error: err.message });
+    try {
+        // Get all tasks from Turso for diagnostics
+        const allRes = await client.execute('SELECT * FROM scheduled_tasks');
+        const allRows = allRes.rows;
+        const pendingCount = allRows.filter(r => r.status === 'pending').length;
+        console.log(`[Cron] Diagnostic: Found ${allRows.length} total tasks, ${pendingCount} pending. Server UTC: ${new Date().toISOString()}`);
+
+        // Find due tasks (execute_at <= now + 2 min buffer)
+        const dueRes = await client.execute({
+            sql: `SELECT * FROM scheduled_tasks WHERE status = 'pending' AND datetime(execute_at) <= datetime('now', '+2 minutes')`,
+            args: []
+        });
+        const rows = dueRes.rows;
+
+        if (rows.length === 0) {
+            return res.json({
+                message: 'No pending tasks due for execution.',
+                debug: {
+                    total_tasks_in_db: allRows.length,
+                    pending_tasks_count: pendingCount,
+                    server_time_utc: new Date().toISOString(),
+                    last_tasks: allRows.slice(-3)
+                }
+            });
         }
 
-        const pendingCount = allRows.filter(r => r.status === 'pending').length;
-        console.log(`[Cron] Diagnostic: Found ${allRows.length} total tasks in DB, ${pendingCount} are pending. Server UTC now: ${new Date().toISOString()}`);
-
-        // Find tasks that are pending and should have executed by now
-        db.all(`SELECT * FROM scheduled_tasks WHERE status = 'pending' AND datetime(execute_at) <= datetime('now', '+2 minutes')`, [], async (err, rows) => {
-            if (err) {
-                console.error('[Cron] Filter Error:', err);
-                return res.status(500).json({ error: err.message });
+        console.log(`[Cron] Found ${rows.length} due tasks.`);
+        const results = [];
+        for (const task of rows) {
+            console.log(`[Cron] Executing Task ${task.id} for Promo ${task.promotion_id}`);
+            try {
+                await executeRemoval(task.promotion_id, task.promotion_type, task.access_token, task.id);
+                results.push({ id: task.id, status: 'completed' });
+            } catch (e) {
+                console.error(`[Cron] Task ${task.id} Failed:`, e.message);
+                results.push({ id: task.id, status: 'failed', error: e.message });
             }
-
-            if (rows.length === 0) {
-                return res.json({
-                    message: 'No pending tasks due for execution.',
-                    debug: {
-                        total_tasks_in_db: allRows.length,
-                        pending_tasks_count: pendingCount,
-                        server_time_utc: new Date().toISOString(),
-                        last_tasks: allRows.slice(-3) // Show last 3 for format inspection
-                    }
-                });
-            }
-
-            console.log(`[Cron] Found ${rows.length} due tasks.`);
-            const results = [];
-            for (const task of rows) {
-                console.log(`[Cron] Executing Task ${task.id} for Promo ${task.promotion_id}`);
-                try {
-                    await executeRemoval(task.promotion_id, task.promotion_type, task.access_token, task.id);
-                    results.push({ id: task.id, status: 'completed' });
-                } catch (e) {
-                    console.error(`[Cron] Task ${task.id} Failed:`, e.message);
-                    results.push({ id: task.id, status: 'failed', error: e.message });
-                }
-            }
-            res.json({ success: true, processed: results.length, details: results });
-        });
-    });
+        }
+        res.json({ success: true, processed: results.length, details: results });
+    } catch (err) {
+        console.error('[Cron] Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Create Promotion UI
