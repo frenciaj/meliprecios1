@@ -1,4 +1,4 @@
-const localtunnel = require('localtunnel');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -8,49 +8,57 @@ process.env.RUNNING_LOCAL = 'true';
 require('dotenv').config();
 
 const PORT = process.env.PORT || 3000;
-const SUBDOMAIN = process.env.LOCALTUNNEL_SUBDOMAIN || '';
 
 (async () => {
-    console.log('Starting localtunnel...');
-    try {
-        const opts = { port: PORT };
-        if (SUBDOMAIN) {
-            opts.subdomain = SUBDOMAIN;
-        }
-
-        const tunnel = await localtunnel(opts);
-        console.log('\n======================================================');
-        console.log(`🚀 Localtunnel active: ${tunnel.url}`);
-        console.log(`🔗 Redirect URI: ${tunnel.url}/callback`);
-        console.log('======================================================\n');
-
-        // Dynamically override REDIRECT_URI in environment before starting server
-        process.env.REDIRECT_URI = `${tunnel.url}/callback`;
-
-        // Update the .env file automatically so the user can see it
-        const envPath = path.join(__dirname, '.env');
-        if (fs.existsSync(envPath)) {
-            let envContent = fs.readFileSync(envPath, 'utf8');
-            if (envContent.includes('REDIRECT_URI=')) {
-                envContent = envContent.replace(/REDIRECT_URI=.*/, `REDIRECT_URI=${tunnel.url}/callback`);
-            } else {
-                envContent += `\nREDIRECT_URI=${tunnel.url}/callback\n`;
+    console.log('Starting tunnelmole tunnel...');
+    
+    // Spawn tunnelmole: npx tunnelmole 3000
+    const tunnelProcess = spawn('npx', ['tunnelmole', PORT.toString()], { shell: true });
+    
+    let tunnelUrl = '';
+    
+    tunnelProcess.stdout.on('data', (data) => {
+        const output = data.toString();
+        // Look for the HTTPS URL, e.g. https://xxxx.tunnelmole.net
+        const match = output.match(/https:\/\/[a-zA-Z0-9.-]+\.tunnelmole\.net/);
+        if (match && !tunnelUrl) {
+            tunnelUrl = match[0];
+            console.log('\n======================================================');
+            console.log(`🚀 Tunnelmole active: ${tunnelUrl}`);
+            console.log(`🔗 Redirect URI: ${tunnelUrl}/callback`);
+            console.log('======================================================\n');
+            
+            // Set Redirect URI in environment
+            process.env.REDIRECT_URI = `${tunnelUrl}/callback`;
+            
+            // Update the .env file automatically
+            const envPath = path.join(__dirname, '.env');
+            if (fs.existsSync(envPath)) {
+                let envContent = fs.readFileSync(envPath, 'utf8');
+                if (envContent.includes('REDIRECT_URI=')) {
+                    envContent = envContent.replace(/REDIRECT_URI=.*/, `REDIRECT_URI=${tunnelUrl}/callback`);
+                } else {
+                    envContent += `\nREDIRECT_URI=${tunnelUrl}/callback\n`;
+                }
+                fs.writeFileSync(envPath, envContent, 'utf8');
+                console.log('Updated REDIRECT_URI in .env file.');
             }
-            fs.writeFileSync(envPath, envContent, 'utf8');
-            console.log('Updated REDIRECT_URI in .env file.');
+            
+            // Start the server in the same process
+            console.log('Starting local Express server...');
+            require('./server.js');
         }
+    });
 
-        tunnel.on('close', () => {
-            console.log('Tunnel closed.');
-        });
+    tunnelProcess.stderr.on('data', (data) => {
+        const msg = data.toString().trim();
+        // Filter out deprecation warnings to keep logs clean
+        if (!msg.includes('npm warn') && !msg.includes('Multer')) {
+            console.error(`[Tunnelmole Error]: ${msg}`);
+        }
+    });
 
-        // Start the server in the same process
-        require('./server.js');
-
-    } catch (err) {
-        console.error('Error starting localtunnel:', err.message);
-        console.log('Falling back to local-only mode (http://localhost:3000).');
-        console.log('NOTE: Mercado Libre OAuth requires HTTPS/Tunneling to function.');
-        require('./server.js');
-    }
+    tunnelProcess.on('close', (code) => {
+        console.log(`Tunnelmole process exited with code ${code}`);
+    });
 })();
