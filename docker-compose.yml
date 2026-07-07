@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  meliprecios:
+    build: .
+    container_name: meliprecios
+    restart: unless-stopped
+    ports:
+      - "3000:3000"       # Expose locally on NAS; Cloudflare Tunnel proxies this
+    env_file: .env
+    volumes:
+      - ./meliprecios.db:/app/meliprecios.db   # persist local SQLite if used
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Cloudflare Tunnel — gives you a free public HTTPS URL
+  # Create a tunnel at: https://one.dash.cloudflare.com/ → Networks → Tunnels
+  # Paste the tunnel token into .env as CLOUDFLARE_TUNNEL_TOKEN
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    env_file: .env
+    depends_on:
+      - meliprecios

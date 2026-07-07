@@ -3,6 +3,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const path = require('path');
 const cookieParser = require('cookie-parser');
+const cron = require('node-cron');
 require('dotenv').config();
 const { createClient } = require('@libsql/client');
 
@@ -198,11 +199,34 @@ const LISTING_TYPE_ALIASES = {
 };
 
 // Load and helper for scheduling
-// const activeJobs = new Map();
 
-function scheduleRemovalJob(taskId, promoId, promoType, executeAt, accessToken, userId) {
-    // Legacy function placeholder - removed for Serverless compatibility
-    console.log(`[Schedule] Task ${taskId} saved to DB for Cron execution.`);
+function scheduleRemovalJob(taskId, promoId, promoType, executeAt, accessToken) {
+    // Schedule a one-shot execution at the right time using a polling interval
+    console.log(`[Schedule] Task ${taskId} queued for ${executeAt}. Will be picked up by the 5-min cron.`);
+}
+
+// Central queue processor - shared by cron and the manual HTTP endpoint
+async function processQueue() {
+    try {
+        const dueRes = await client.execute({
+            sql: `SELECT * FROM scheduled_tasks WHERE status = 'pending' AND datetime(execute_at) <= datetime('now', '+2 minutes')`,
+            args: []
+        });
+        const rows = dueRes.rows;
+        if (rows.length === 0) return;
+
+        console.log(`[Cron] Found ${rows.length} due task(s).`);
+        for (const task of rows) {
+            console.log(`[Cron] Executing task ${task.id} for promo ${task.promotion_id}`);
+            try {
+                await executeRemoval(task.promotion_id, task.promotion_type, task.access_token, task.id);
+            } catch (e) {
+                console.error(`[Cron] Task ${task.id} failed:`, e.message);
+            }
+        }
+    } catch (e) {
+        console.error('[Cron] processQueue error:', e.message);
+    }
 }
 
 async function executeRemoval(promoId, promoType, accessToken, taskId) {
@@ -337,7 +361,7 @@ const renderPage = (title, content, activeTab = 'listings') => `
         ${content}
     </div>
     <footer style="text-align: center; color: #999; margin-top: 40px; font-size: 0.8rem; padding-bottom: 20px;">
-        <div>Creado por Tatan v15.0.0. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
+        <div>Creado por Tatan v15.1.0. Todos los Derechos Reservados &copy; ${new Date().getFullYear()}</div>
     </footer>
 </body>
 </html>
@@ -2355,51 +2379,14 @@ app.post('/schedule-remove-items', async (req, res) => {
     }
 });
 
-// Vercel Cron Endpoint
+// Manual trigger for the queue processor (debugging / one-off use)
+// The real scheduler runs automatically every 5 minutes via node-cron on startup.
 app.get('/api/cron/process-queue', async (req, res) => {
-    console.log('[Cron] Checking for pending tasks...');
-
+    console.log('[Cron] Manual trigger received.');
     try {
-        // Get all tasks from Turso for diagnostics
-        const allRes = await client.execute('SELECT * FROM scheduled_tasks');
-        const allRows = allRes.rows;
-        const pendingCount = allRows.filter(r => r.status === 'pending').length;
-        console.log(`[Cron] Diagnostic: Found ${allRows.length} total tasks, ${pendingCount} pending. Server UTC: ${new Date().toISOString()}`);
-
-        // Find due tasks (execute_at <= now + 2 min buffer)
-        const dueRes = await client.execute({
-            sql: `SELECT * FROM scheduled_tasks WHERE status = 'pending' AND datetime(execute_at) <= datetime('now', '+2 minutes')`,
-            args: []
-        });
-        const rows = dueRes.rows;
-
-        if (rows.length === 0) {
-            return res.json({
-                message: 'No pending tasks due for execution.',
-                debug: {
-                    total_tasks_in_db: allRows.length,
-                    pending_tasks_count: pendingCount,
-                    server_time_utc: new Date().toISOString(),
-                    last_tasks: allRows.slice(-3)
-                }
-            });
-        }
-
-        console.log(`[Cron] Found ${rows.length} due tasks.`);
-        const results = [];
-        for (const task of rows) {
-            console.log(`[Cron] Executing Task ${task.id} for Promo ${task.promotion_id}`);
-            try {
-                await executeRemoval(task.promotion_id, task.promotion_type, task.access_token, task.id);
-                results.push({ id: task.id, status: 'completed' });
-            } catch (e) {
-                console.error(`[Cron] Task ${task.id} Failed:`, e.message);
-                results.push({ id: task.id, status: 'failed', error: e.message });
-            }
-        }
-        res.json({ success: true, processed: results.length, details: results });
+        await processQueue();
+        res.json({ success: true, message: 'Queue processed.' });
     } catch (err) {
-        console.error('[Cron] Error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
@@ -2529,5 +2516,15 @@ app.post('/create-promotion', async (req, res) => {
 module.exports = app;
 
 if (require.main === module) {
-    app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+    app.listen(PORT, () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+
+        // Start the in-process cron job to process scheduled promo removals
+        // Runs every 5 minutes — replaces Vercel Cron
+        cron.schedule('*/5 * * * *', () => {
+            console.log('[Cron] Running scheduled task check...');
+            processQueue();
+        });
+        console.log('[Cron] Scheduler started (every 5 minutes).');
+    });
 }

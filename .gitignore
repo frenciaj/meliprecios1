@@ -3,3 +3,13 @@ node_modules/
 .DS_Store
 *.db
 *.sqlite
+
+# Scratch / debug scripts
+client_script_check.js
+debug_sync.js
+extract_script.js
+find_db_init.js
+fix_syntax*.js
+replace.js
+reset_js_block*.js
+verify_js.js
