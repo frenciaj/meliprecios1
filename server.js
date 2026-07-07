@@ -2515,7 +2515,7 @@ app.post('/create-promotion', async (req, res) => {
 
 module.exports = app;
 
-if (require.main === module) {
+if (require.main === module || process.env.RUNNING_LOCAL === 'true') {
     app.listen(PORT, () => {
         console.log(`Server running on http://localhost:${PORT}`);
 

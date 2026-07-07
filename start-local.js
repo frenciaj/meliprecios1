@@ -2,6 +2,8 @@ const localtunnel = require('localtunnel');
 const fs = require('fs');
 const path = require('path');
 
+process.env.RUNNING_LOCAL = 'true';
+
 // Load existing env variables
 require('dotenv').config();
 
