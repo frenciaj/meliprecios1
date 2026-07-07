@@ -10,8 +10,14 @@ require('dotenv').config();
 const PORT = process.env.PORT || 3000;
 
 (async () => {
+    console.log('Starting local Express server...');
+    // Start the server first so port 3000 is active
+    require('./server.js');
+
+    // Wait a brief moment to ensure the server is listening
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
     console.log('Starting tunnelmole tunnel...');
-    
     // Spawn tunnelmole: npx tunnelmole 3000
     const tunnelProcess = spawn('npx', ['tunnelmole', PORT.toString()], { shell: true });
     
@@ -43,10 +49,6 @@ const PORT = process.env.PORT || 3000;
                 fs.writeFileSync(envPath, envContent, 'utf8');
                 console.log('Updated REDIRECT_URI in .env file.');
             }
-            
-            // Start the server in the same process
-            console.log('Starting local Express server...');
-            require('./server.js');
         }
     });
 
